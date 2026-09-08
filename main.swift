@@ -10,6 +10,13 @@ private let verticalScrollDirection: Int64 = 1
 // is reported as continuous on your macOS/device combination, set it to false.
 private let requireLineBasedScrollEvents = true
 
+// Quartz reports mouse buttons with zero-based numbers: left is 0, right is
+// 1, and middle is 2. MX Master side buttons normally arrive as button 3
+// (Back) and button 4 (Forward). Change these values if the connected mode or
+// device reports different button numbers.
+private let backButtonNumber: Int64 = 3
+private let forwardButtonNumber: Int64 = 4
+
 private struct ScrollDeltas {
     let integer: Int64
     let fixedPoint: Double
@@ -44,7 +51,10 @@ private final class EventTapController {
     private(set) var eventTap: CFMachPort?
 
     func createEventTap() -> CFMachPort? {
-        let eventsOfInterest = CGEventMask(1) << CGEventType.scrollWheel.rawValue
+        let eventsOfInterest =
+            (CGEventMask(1) << CGEventType.scrollWheel.rawValue) |
+            (CGEventMask(1) << CGEventType.otherMouseDown.rawValue) |
+            (CGEventMask(1) << CGEventType.otherMouseUp.rawValue)
         let userInfo = Unmanaged.passUnretained(self).toOpaque()
 
         let eventTap = CGEvent.tapCreate(
@@ -65,10 +75,33 @@ private final class EventTapController {
         CGEvent.tapEnable(tap: eventTap, enable: true)
     }
 
-    func process(event: CGEvent) -> Unmanaged<CGEvent> {
-        guard event.type == .scrollWheel else {
+    func process(event: CGEvent) -> Unmanaged<CGEvent>? {
+        switch event.type {
+        case .otherMouseDown:
+            guard let scrollDirection = scrollDirection(for: event) else {
+                return Unmanaged.passUnretained(event)
+            }
+
+            postVerticalScroll(direction: scrollDirection)
+            return nil
+
+        case .otherMouseUp:
+            // Suppress the matching navigation release without generating a
+            // second scroll event.
+            guard isMappedThumbButton(event) else {
+                return Unmanaged.passUnretained(event)
+            }
+            return nil
+
+        case .scrollWheel:
+            return processScrollWheel(event)
+
+        default:
             return Unmanaged.passUnretained(event)
         }
+    }
+
+    private func processScrollWheel(_ event: CGEvent) -> Unmanaged<CGEvent> {
 
         // Shift+scroll remains the native horizontal-scroll gesture.
         guard !event.flags.contains(.maskShift) else {
@@ -108,6 +141,39 @@ private final class EventTapController {
         writeDeltas(horizontalAxis, to: event, axis: verticalAxisFields)
         clearDeltas(in: event, axis: horizontalAxisFields)
         return Unmanaged.passUnretained(event)
+    }
+
+    private func isMappedThumbButton(_ event: CGEvent) -> Bool {
+        let buttonNumber = event.getIntegerValueField(.mouseEventButtonNumber)
+        return buttonNumber == backButtonNumber || buttonNumber == forwardButtonNumber
+    }
+
+    private func scrollDirection(for event: CGEvent) -> Int32? {
+        let buttonNumber = event.getIntegerValueField(.mouseEventButtonNumber)
+
+        switch buttonNumber {
+        case forwardButtonNumber:
+            return 1
+        case backButtonNumber:
+            return -1
+        default:
+            return nil
+        }
+    }
+
+    private func postVerticalScroll(direction: Int32) {
+        guard let scrollEvent = CGEvent(
+            scrollWheelEvent2Source: nil,
+            units: .line,
+            wheelCount: 1,
+            wheel1: direction,
+            wheel2: 0,
+            wheel3: 0
+        ) else {
+            fail("Could not create a synthesized vertical scroll event.")
+        }
+
+        scrollEvent.post(tap: .cgSessionEventTap)
     }
 }
 
