@@ -1,7 +1,7 @@
-# MX Master thumbwheel remapper
+# Thumbwheel Remapper
 
-This small macOS command-line utility uses a Quartz `CGEvent` tap to customize
-the Logitech MX Master:
+This small native macOS utility uses a Quartz `CGEvent` tap to customize the
+Logitech MX Master:
 
 - The thumbwheel's pure horizontal scroll becomes vertical scroll.
 - The Forward thumb button produces repeated vertical scroll-up events while
@@ -9,36 +9,58 @@ the Logitech MX Master:
 - The Back thumb button produces repeated vertical scroll-down events while
   held down (a single event on a quick click).
 
-It runs in the foreground as a menu-bar (status item) app, so it has a small
-native UI for changing scroll-repeat settings; it has no third-party runtime
-dependencies.
+It runs as a menu-bar (status item) app, so it has a small native UI for
+changing scroll-repeat settings; it has no third-party runtime dependencies.
 
 ## Requirements
 
 - macOS 10.13 or newer
-- Swift command-line tools (`swiftc`)
+- Swift command-line tools (`swiftc`) for building from source
 - A Logitech MX Master, or another device that emits compatible events
-- Accessibility permission for the executable or the terminal that launches it
+- Accessibility permission for Thumbwheel Remapper
 
-## Build and run
+## Build, install, and run
+
+The recommended workflow is to build an installable app bundle:
 
 From this directory:
 
 ```sh
-swiftc main.swift -o thumbwheel-remapper
-./thumbwheel-remapper
+make setup-signing
+make install
+open "$HOME/Applications/Thumbwheel Remapper.app"
 ```
 
-The process must remain running for remapping to be active. Stop it from the
-⇕ menu-bar icon's **Quit** item, or with Control-C in the terminal.
+`make setup-signing` is a one-time step that creates a local code-signing
+certificate in your login keychain. Reusing this identity prevents macOS from
+treating every rebuild as a different app and forgetting its Accessibility
+permission. The certificate is valid only on your Mac and is intended for
+personal builds, not distribution.
 
-The executable needs Accessibility permission because the event tap observes,
-changes, suppresses, and synthesizes system-wide input events. On macOS Ventura
-and newer, open **System Settings > Privacy & Security > Accessibility**. On
-older macOS versions, use **System Preferences > Security & Privacy > Privacy >
-Accessibility**. Enable the terminal application or `thumbwheel-remapper` (use
-the `+` button if it is not listed), then run the command again. Permission
-changes may require restarting the terminal or the utility.
+This installs the app in `~/Applications`, so no administrator password is
+needed. To install it in `/Applications`, use:
+
+```sh
+INSTALL_DIR=/Applications make install
+```
+
+The app runs in the background with a ⇕ menu-bar icon. Use its **Quit** item to
+stop remapping. To build without installing:
+
+```sh
+make app
+open "build/Thumbwheel Remapper.app"
+```
+
+The build script uses the local **Thumbwheel Remapper Local Signing**
+certificate. Apps intended for distribution to other Macs should instead be
+signed with a Developer ID certificate and notarized by Apple.
+
+The app needs Accessibility permission because the event tap observes, changes,
+suppresses, and synthesizes system-wide input events. On first launch, it offers
+to open **System Settings > Privacy & Security > Accessibility**. Enable
+**Thumbwheel Remapper**, then launch the app again. On older macOS versions, use
+**System Preferences > Security & Privacy > Privacy > Accessibility**.
 
 ## Behavior
 
@@ -130,11 +152,18 @@ continuous-scroll filter is only a heuristic for distinguishing the physical
 thumbwheel from trackpad gestures. The button-number configuration is likewise
 device/connection dependent.
 
+## Launch at login
+
+For a personal installation, add **Thumbwheel Remapper** to
+**System Settings > General > Login Items**. This is preferable to a
+`launchd` entry because macOS keeps the app's Accessibility permission tied to
+the installed app bundle.
+
 ## Optional launchd LaunchAgent
 
-To start the utility when you log in, build it at a stable path and create
+If you prefer a `launchd` configuration, create
 `~/Library/LaunchAgents/com.example.thumbwheel-remapper.plist` with the paths
-adjusted for your account:
+adjusted for your account and point it at the installed app executable:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -146,7 +175,7 @@ adjusted for your account:
   <string>com.example.thumbwheel-remapper</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/you/bin/thumbwheel-remapper</string>
+    <string>/Users/you/Applications/Thumbwheel Remapper.app/Contents/MacOS/ThumbwheelRemapper</string>
   </array>
   <key>RunAtLoad</key>
   <true/>

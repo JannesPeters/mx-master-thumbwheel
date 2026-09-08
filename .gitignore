@@ -13,3 +13,6 @@ DerivedData/
 
 # Local executable produced by the README build command
 thumbwheel-remapper
+
+# Locally built application bundle
+build/

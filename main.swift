@@ -327,7 +327,7 @@ private final class PreferencesWindowController: NSWindowController, NSWindowDel
         self.settings = settings
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 360, height: 190),
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 174),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -390,8 +390,9 @@ private final class PreferencesWindowController: NSWindowController, NSWindowDel
 
         let stack = NSStackView(views: [delayTitle, delayRow, intervalTitle, intervalRow, buttonRow])
         stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 10
+        stack.alignment = .width
+        stack.distribution = .fill
+        stack.spacing = 8
         stack.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
@@ -408,9 +409,6 @@ private final class PreferencesWindowController: NSWindowController, NSWindowDel
             stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             stack.topAnchor.constraint(equalTo: contentView.topAnchor),
             stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
-            delayRow.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            intervalRow.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            buttonRow.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
     }
 
@@ -449,6 +447,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settings: ScrollRepeatSettings
     private var statusItem: NSStatusItem?
     private var preferencesWindowController: PreferencesWindowController?
+    private var eventTapController: EventTapController?
+    private var eventTapRunLoopSource: CFRunLoopSource?
 
     init(settings: ScrollRepeatSettings) {
         self.settings = settings
@@ -456,6 +456,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        startEventTap()
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.title = "⇕"
@@ -482,29 +483,67 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func quit() {
         NSApp.terminate(nil)
     }
+
+    private func startEventTap() {
+        let controller = EventTapController(settings: settings)
+        guard let eventTap = controller.createEventTap() else {
+            if AXIsProcessTrusted() {
+                showError(
+                    message: "Could not create the event tap.",
+                    detail: "Accessibility access is enabled, but Thumbwheel Remapper could not start listening for mouse events. Quit other input-remapping utilities and try again."
+                )
+            } else {
+                showAccessibilityPrompt()
+            }
+            return
+        }
+
+        guard let runLoopSource = CFMachPortCreateRunLoopSource(
+            kCFAllocatorDefault,
+            eventTap,
+            0
+        ) else {
+            showError(
+                message: "Could not start the event tap.",
+                detail: "Thumbwheel Remapper could not connect its event listener to the macOS run loop."
+            )
+            return
+        }
+
+        CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
+        CGEvent.tapEnable(tap: eventTap, enable: true)
+        eventTapController = controller
+        eventTapRunLoopSource = runLoopSource
+    }
+
+    private func showAccessibilityPrompt() {
+        let alert = NSAlert()
+        alert.messageText = "Accessibility permission required"
+        alert.informativeText = "Thumbwheel Remapper needs Accessibility access to observe and remap mouse events. Enable it for this app in System Settings, then launch the app again."
+        alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Quit")
+
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn,
+           let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
+
+        NSApp.terminate(nil)
+    }
+
+    private func showError(message: String, detail: String) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = detail
+        alert.addButton(withTitle: "Quit")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+        NSApp.terminate(nil)
+    }
 }
 
 let settings = ScrollRepeatSettings()
-private let controller = EventTapController(settings: settings)
-guard let eventTap = controller.createEventTap() else {
-    fail(
-        """
-        Could not create the event tap. Grant this executable Accessibility \
-        permission in System Settings > Privacy & Security > Accessibility, \
-        then run it again.
-        """
-    )
-}
-
-guard let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0) else {
-    fail("Could not create the event-tap run-loop source.")
-}
-
-CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
-CGEvent.tapEnable(tap: eventTap, enable: true)
-
-print("Thumbwheel remapping active. Use the ⇕ menu-bar icon for settings, or press Control-C to stop.")
-
 let app = NSApplication.shared
 private let appDelegate = AppDelegate(settings: settings)
 app.delegate = appDelegate
