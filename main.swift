@@ -17,6 +17,13 @@ private let requireLineBasedScrollEvents = true
 private let backButtonNumber: Int64 = 3
 private let forwardButtonNumber: Int64 = 4
 
+// While a thumb button is held down, keep posting scroll events at this
+// cadence so scrolling continues instead of firing a single line. The
+// initial delay mirrors typical key-repeat behavior before the fast repeat
+// kicks in.
+private let thumbButtonScrollRepeatInitialDelay: TimeInterval = 0.3
+private let thumbButtonScrollRepeatInterval: TimeInterval = 0.05
+
 private struct ScrollDeltas {
     let integer: Int64
     let fixedPoint: Double
@@ -49,6 +56,8 @@ private func clearDeltas(in event: CGEvent, axis: (integer: CGEventField, fixedP
 
 private final class EventTapController {
     private(set) var eventTap: CFMachPort?
+    private var activeScrollButtonNumber: Int64?
+    private var activeScrollTimer: Timer?
 
     func createEventTap() -> CFMachPort? {
         let eventsOfInterest =
@@ -82,7 +91,9 @@ private final class EventTapController {
                 return Unmanaged.passUnretained(event)
             }
 
+            let buttonNumber = event.getIntegerValueField(.mouseEventButtonNumber)
             postVerticalScroll(direction: scrollDirection)
+            startRepeatingScroll(direction: scrollDirection, buttonNumber: buttonNumber)
             return nil
 
         case .otherMouseUp:
@@ -90,6 +101,11 @@ private final class EventTapController {
             // second scroll event.
             guard isMappedThumbButton(event) else {
                 return Unmanaged.passUnretained(event)
+            }
+
+            let buttonNumber = event.getIntegerValueField(.mouseEventButtonNumber)
+            if buttonNumber == activeScrollButtonNumber {
+                stopRepeatingScroll()
             }
             return nil
 
@@ -159,6 +175,27 @@ private final class EventTapController {
         default:
             return nil
         }
+    }
+
+    private func startRepeatingScroll(direction: Int32, buttonNumber: Int64) {
+        stopRepeatingScroll()
+        activeScrollButtonNumber = buttonNumber
+
+        let timer = Timer(
+            fire: Date().addingTimeInterval(thumbButtonScrollRepeatInitialDelay),
+            interval: thumbButtonScrollRepeatInterval,
+            repeats: true
+        ) { [weak self] _ in
+            self?.postVerticalScroll(direction: direction)
+        }
+        RunLoop.current.add(timer, forMode: .common)
+        activeScrollTimer = timer
+    }
+
+    private func stopRepeatingScroll() {
+        activeScrollTimer?.invalidate()
+        activeScrollTimer = nil
+        activeScrollButtonNumber = nil
     }
 
     private func postVerticalScroll(direction: Int32) {
