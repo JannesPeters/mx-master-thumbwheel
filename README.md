@@ -9,8 +9,9 @@ Logitech MX Master:
 - The Back thumb button produces repeated vertical scroll-down events while
   held down (a single event on a quick click).
 
-It runs as a menu-bar (status item) app, so it has a small native UI for
-changing scroll-repeat settings; it has no third-party runtime dependencies.
+It runs as a menu-bar (status item) app, with a native settings window for
+configuring each remapping behavior; it has no third-party runtime
+dependencies.
 
 ## Requirements
 
@@ -80,40 +81,42 @@ to open **System Settings > Privacy & Security > Accessibility**. Enable
 
 ## Menu-bar settings UI
 
-The app shows a ⇕ icon in the menu bar while it runs. Its menu has:
+The app shows a ⇕ icon in the menu bar while it runs and uses a mouse-shaped
+app icon with its side thumbwheel highlighted. Its menu has:
 
-- **Preferences…** — opens a small window with two sliders:
+- **Preferences…** — opens a settings window with:
+  - **Remapping** under **Thumbwheel** — turns horizontal-to-vertical
+    thumbwheel conversion on or off without quitting the app.
+  - **Vertical direction** — keeps or reverses the thumbwheel's resulting
+    vertical scroll direction.
+  - **Input filtering** — keeps pixel-based trackpad gestures from being
+    mistaken for the mouse's thumbwheel. Turn it off if a particular
+    mouse/connection reports its thumbwheel as continuous.
+  - **Remapping** under **Thumb buttons** — independently turns thumb-button
+    scrolling on or off.
+  - **Back button** and **Forward button** — choose the zero-based Quartz
+    button numbers used by the connected mouse. The two values must be
+    different.
   - **Repeat delay before scrolling starts** (0.05–2.00 s, default 0.30 s):
     how long a thumb button must be held before repeating begins.
   - **Repeat interval (scroll speed)** (0.01–0.50 s, default 0.05 s): how often
     a scroll event repeats while the button is held; smaller is faster.
-  - **Restore Defaults** resets both sliders to the defaults above.
-  - Changes apply immediately (read on the next button press) and are saved
-    right away — there is no separate "Save" step. **Done** just closes the
-    window.
+  - **Restore Defaults** resets every setting.
+  - Behavior toggles apply immediately; button assignments and repeat timing
+    apply on the next button press. Everything is saved right away, with no
+    separate Save step.
 - **Quit** — exits the app.
 
-Both values are persisted via `UserDefaults` (the standard macOS preferences
-mechanism) so they are restored the next time the app launches, and are
-clamped to the ranges above no matter how they were set, so a stale or
-corrupted preference value can never produce a zero, negative, or unreasonably
-large repeat rate.
+All values are persisted via `UserDefaults` (the standard macOS preferences
+mechanism) so they are restored the next time the app launches. Numeric values
+are clamped to safe ranges, and invalid duplicate button assignments are
+rejected.
 
 ## Configuration
 
-Edit the constants at the top of `main.swift` and rebuild:
-
-- `verticalScrollDirection = 1` keeps the thumbwheel direction; change it to
-  `-1` if the resulting vertical scrolling is inverted.
-- `requireLineBasedScrollEvents = true` ignores continuous, pixel-based
-  scrolling so trackpad horizontal gestures are less likely to be remapped. If
-  macOS reports the MX thumbwheel as continuous, change this to `false`. That
-  fallback may also remap other continuous horizontal gestures.
-- `backButtonNumber = 3` and `forwardButtonNumber = 4` are the default Quartz
-  button numbers for MX Master Back and Forward. These numbers are zero-based:
-  left is 0, right is 1, and middle is 2. Change the two constants if the
-  connected device or connection mode reports different numbers. Keep them
-  distinct.
+Use **Preferences…** from the menu-bar icon to change the remapping direction,
+continuous-event filtering, Back/Forward button numbers, repeat timing, or to
+temporarily disable either remapping behavior.
 
 The button mapping applies to `otherMouseDown` and `otherMouseUp` events. It
 generates a scroll event on button-down and then repeats at the configured
@@ -124,25 +127,24 @@ held, stopping on the matching button-up.
 
 - **`Could not create the event tap`:** grant Accessibility permission to the
   terminal or executable, then restart the process.
-- **Thumbwheel does nothing:** confirm the process is still running and rebuild
-  after changing a configuration constant. Try setting
-  `requireLineBasedScrollEvents` to `false` if the thumbwheel is reported as
-  continuous.
+- **Thumbwheel does nothing:** confirm the process is still running and that
+  thumbwheel remapping is enabled. Turn off **Input filtering** if the
+  thumbwheel is reported as continuous.
 - **Thumb buttons still navigate:** verify that the buttons arrive as
   `otherMouseDown`/`otherMouseUp` events and that
-  `backButtonNumber`/`forwardButtonNumber` match the values reported by that
+  the configured Back/Forward button numbers match the values reported by that
   device and connection mode. USB, Bluetooth, Logitech Unifying, and Logitech
   Bolt connections can expose different button numbers.
 - **The button numbers are not visible to this utility:** temporarily inspect
   the mouse events with an event-monitoring tool, or use the button-number
-  conventions reported by your remapping utility, then update the constants
-  and rebuild.
+  conventions reported by your remapping utility, then update the values in
+  **Preferences…**.
 - **Logi Options+ assigned a keyboard shortcut:** the buttons may arrive as
   keyboard events instead of mouse events. This utility intentionally handles
   mouse button events only; assign the buttons as native mouse buttons if
   possible.
-- **Scrolling is backwards:** set `verticalScrollDirection` to `-1` and
-  rebuild.
+- **Scrolling is backwards:** choose **Reverse scroll direction** in
+  **Preferences…**.
 - **Horizontal scrolling no longer works with Shift:** verify that the
   thumbwheel event reaches macOS as a scroll-wheel event and that another input
   utility is not intercepting it.
