@@ -4,82 +4,203 @@ import CoreGraphics
 import Darwin
 import Foundation
 
-// Set to -1 if the remapped scroll direction feels inverted.
-private let verticalScrollDirection: Int64 = 1
-
-// Keep this true to ignore pixel-based trackpad gestures. If the MX thumbwheel
-// is reported as continuous on your macOS/device combination, set it to false.
-private let requireLineBasedScrollEvents = true
-
-// Quartz reports mouse buttons with zero-based numbers: left is 0, right is
-// 1, and middle is 2. MX Master side buttons normally arrive as button 3
-// (Back) and button 4 (Forward). Change these values if the connected mode or
-// device reports different button numbers.
-private let backButtonNumber: Int64 = 3
-private let forwardButtonNumber: Int64 = 4
-
-// While a thumb button is held down, keep posting scroll events at this
-// cadence so scrolling continues instead of firing a single line. The
-// initial delay mirrors typical key-repeat behavior before the fast repeat
-// kicks in. These are the fallback values used the first time the app runs;
-// after that the user's saved values (from the menu-bar preferences window)
-// take over. See `ScrollRepeatSettings` below.
-enum ScrollRepeatDefaults {
+enum RemappingDefaults {
+    static let thumbwheelRemappingEnabled = true
+    static let verticalScrollDirection: Int64 = 1
+    static let requireLineBasedScrollEvents = true
+    static let thumbButtonRemappingEnabled = true
+    static let backButtonNumber: Int64 = 3
+    static let forwardButtonNumber: Int64 = 4
     static let initialDelay: TimeInterval = 0.3
     static let interval: TimeInterval = 0.05
 
-    // Keeps the repeat responsive without hammering the event tap.
+    static let buttonNumberRange: ClosedRange<Int64> = 0...31
     static let initialDelayRange: ClosedRange<TimeInterval> = 0.05...2.0
     static let intervalRange: ClosedRange<TimeInterval> = 0.01...0.5
 }
 
-/// Persists the thumb-button scroll-repeat delay/interval in `UserDefaults` so
-/// they survive relaunches, and clamps any value (stored or user-supplied) to
-/// a safe range before it can reach the scroll-repeat timer.
-final class ScrollRepeatSettings {
-    static let initialDelayDidChangeNotification = Notification.Name("ScrollRepeatSettings.initialDelayDidChange")
-    static let intervalDidChangeNotification = Notification.Name("ScrollRepeatSettings.intervalDidChange")
+final class RemappingSettings {
+    static let didChangeNotification = Notification.Name("RemappingSettings.didChange")
 
     private let defaults: UserDefaults
+    private let thumbwheelRemappingEnabledKey = "ThumbwheelRemappingEnabled"
+    private let verticalScrollDirectionKey = "ThumbwheelVerticalScrollDirection"
+    private let requireLineBasedScrollEventsKey = "RequireLineBasedScrollEvents"
+    private let thumbButtonRemappingEnabledKey = "ThumbButtonRemappingEnabled"
+    private let backButtonNumberKey = "BackButtonNumber"
+    private let forwardButtonNumberKey = "ForwardButtonNumber"
     private let initialDelayKey = "ThumbButtonScrollRepeatInitialDelay"
     private let intervalKey = "ThumbButtonScrollRepeatInterval"
 
+    private(set) var thumbwheelRemappingEnabled: Bool
+    private(set) var verticalScrollDirection: Int64
+    private(set) var requireLineBasedScrollEvents: Bool
+    private(set) var thumbButtonRemappingEnabled: Bool
+    private(set) var backButtonNumber: Int64
+    private(set) var forwardButtonNumber: Int64
     private(set) var initialDelay: TimeInterval
     private(set) var interval: TimeInterval
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
 
+        thumbwheelRemappingEnabled = Self.storedBool(
+            in: defaults,
+            forKey: thumbwheelRemappingEnabledKey,
+            fallback: RemappingDefaults.thumbwheelRemappingEnabled
+        )
+        verticalScrollDirection = Self.normalizedDirection(
+            Self.storedInt64(
+                in: defaults,
+                forKey: verticalScrollDirectionKey,
+                fallback: RemappingDefaults.verticalScrollDirection
+            )
+        )
+        requireLineBasedScrollEvents = Self.storedBool(
+            in: defaults,
+            forKey: requireLineBasedScrollEventsKey,
+            fallback: RemappingDefaults.requireLineBasedScrollEvents
+        )
+        thumbButtonRemappingEnabled = Self.storedBool(
+            in: defaults,
+            forKey: thumbButtonRemappingEnabledKey,
+            fallback: RemappingDefaults.thumbButtonRemappingEnabled
+        )
+        backButtonNumber = Self.clamp(
+            Self.storedInt64(
+                in: defaults,
+                forKey: backButtonNumberKey,
+                fallback: RemappingDefaults.backButtonNumber
+            ),
+            to: RemappingDefaults.buttonNumberRange
+        )
+        forwardButtonNumber = Self.clamp(
+            Self.storedInt64(
+                in: defaults,
+                forKey: forwardButtonNumberKey,
+                fallback: RemappingDefaults.forwardButtonNumber
+            ),
+            to: RemappingDefaults.buttonNumberRange
+        )
+        if backButtonNumber == forwardButtonNumber {
+            backButtonNumber = RemappingDefaults.backButtonNumber
+            forwardButtonNumber = RemappingDefaults.forwardButtonNumber
+        }
+
         let storedDelay = defaults.object(forKey: initialDelayKey) as? Double
         let storedInterval = defaults.object(forKey: intervalKey) as? Double
-        initialDelay = Self.clamp(storedDelay ?? ScrollRepeatDefaults.initialDelay, to: ScrollRepeatDefaults.initialDelayRange)
-        interval = Self.clamp(storedInterval ?? ScrollRepeatDefaults.interval, to: ScrollRepeatDefaults.intervalRange)
+        initialDelay = Self.clamp(storedDelay ?? RemappingDefaults.initialDelay, to: RemappingDefaults.initialDelayRange)
+        interval = Self.clamp(storedInterval ?? RemappingDefaults.interval, to: RemappingDefaults.intervalRange)
+    }
+
+    func setThumbwheelRemappingEnabled(_ enabled: Bool) {
+        guard enabled != thumbwheelRemappingEnabled else { return }
+        thumbwheelRemappingEnabled = enabled
+        defaults.set(enabled, forKey: thumbwheelRemappingEnabledKey)
+        notifyChanged()
+    }
+
+    func setVerticalScrollDirection(_ direction: Int64) {
+        let normalized = Self.normalizedDirection(direction)
+        guard normalized != verticalScrollDirection else { return }
+        verticalScrollDirection = normalized
+        defaults.set(normalized, forKey: verticalScrollDirectionKey)
+        notifyChanged()
+    }
+
+    func setRequireLineBasedScrollEvents(_ required: Bool) {
+        guard required != requireLineBasedScrollEvents else { return }
+        requireLineBasedScrollEvents = required
+        defaults.set(required, forKey: requireLineBasedScrollEventsKey)
+        notifyChanged()
+    }
+
+    func setThumbButtonRemappingEnabled(_ enabled: Bool) {
+        guard enabled != thumbButtonRemappingEnabled else { return }
+        thumbButtonRemappingEnabled = enabled
+        defaults.set(enabled, forKey: thumbButtonRemappingEnabledKey)
+        notifyChanged()
+    }
+
+    @discardableResult
+    func setBackButtonNumber(_ buttonNumber: Int64) -> Bool {
+        setButtonNumbers(back: buttonNumber, forward: forwardButtonNumber)
+    }
+
+    @discardableResult
+    func setForwardButtonNumber(_ buttonNumber: Int64) -> Bool {
+        setButtonNumbers(back: backButtonNumber, forward: buttonNumber)
+    }
+
+    @discardableResult
+    func setButtonNumbers(back: Int64, forward: Int64) -> Bool {
+        let clampedBack = Self.clamp(back, to: RemappingDefaults.buttonNumberRange)
+        let clampedForward = Self.clamp(forward, to: RemappingDefaults.buttonNumberRange)
+        guard clampedBack != clampedForward else { return false }
+        guard clampedBack != backButtonNumber || clampedForward != forwardButtonNumber else {
+            return true
+        }
+
+        backButtonNumber = clampedBack
+        forwardButtonNumber = clampedForward
+        defaults.set(clampedBack, forKey: backButtonNumberKey)
+        defaults.set(clampedForward, forKey: forwardButtonNumberKey)
+        notifyChanged()
+        return true
     }
 
     func setInitialDelay(_ value: TimeInterval) {
-        let clamped = Self.clamp(value, to: ScrollRepeatDefaults.initialDelayRange)
+        let clamped = Self.clamp(value, to: RemappingDefaults.initialDelayRange)
         guard clamped != initialDelay else { return }
         initialDelay = clamped
         defaults.set(clamped, forKey: initialDelayKey)
-        NotificationCenter.default.post(name: Self.initialDelayDidChangeNotification, object: self)
+        notifyChanged()
     }
 
     func setInterval(_ value: TimeInterval) {
-        let clamped = Self.clamp(value, to: ScrollRepeatDefaults.intervalRange)
+        let clamped = Self.clamp(value, to: RemappingDefaults.intervalRange)
         guard clamped != interval else { return }
         interval = clamped
         defaults.set(clamped, forKey: intervalKey)
-        NotificationCenter.default.post(name: Self.intervalDidChangeNotification, object: self)
+        notifyChanged()
     }
 
     func restoreDefaults() {
-        setInitialDelay(ScrollRepeatDefaults.initialDelay)
-        setInterval(ScrollRepeatDefaults.interval)
+        setThumbwheelRemappingEnabled(RemappingDefaults.thumbwheelRemappingEnabled)
+        setVerticalScrollDirection(RemappingDefaults.verticalScrollDirection)
+        setRequireLineBasedScrollEvents(RemappingDefaults.requireLineBasedScrollEvents)
+        setThumbButtonRemappingEnabled(RemappingDefaults.thumbButtonRemappingEnabled)
+        setButtonNumbers(
+            back: RemappingDefaults.backButtonNumber,
+            forward: RemappingDefaults.forwardButtonNumber
+        )
+        setInitialDelay(RemappingDefaults.initialDelay)
+        setInterval(RemappingDefaults.interval)
+    }
+
+    private func notifyChanged() {
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
+    }
+
+    private static func storedBool(in defaults: UserDefaults, forKey key: String, fallback: Bool) -> Bool {
+        defaults.object(forKey: key) as? Bool ?? fallback
+    }
+
+    private static func storedInt64(in defaults: UserDefaults, forKey key: String, fallback: Int64) -> Int64 {
+        (defaults.object(forKey: key) as? NSNumber)?.int64Value ?? fallback
+    }
+
+    private static func normalizedDirection(_ direction: Int64) -> Int64 {
+        direction < 0 ? -1 : 1
     }
 
     private static func clamp(_ value: TimeInterval, to range: ClosedRange<TimeInterval>) -> TimeInterval {
         guard value.isFinite else { return range.lowerBound }
         return min(max(value, range.lowerBound), range.upperBound)
+    }
+
+    private static func clamp(_ value: Int64, to range: ClosedRange<Int64>) -> Int64 {
+        min(max(value, range.lowerBound), range.upperBound)
     }
 }
 
@@ -101,10 +222,15 @@ private func readDeltas(from event: CGEvent, axis: (integer: CGEventField, fixed
     )
 }
 
-private func writeDeltas(_ deltas: ScrollDeltas, to event: CGEvent, axis: (integer: CGEventField, fixedPoint: CGEventField, point: CGEventField)) {
-    event.setIntegerValueField(axis.integer, value: deltas.integer * verticalScrollDirection)
-    event.setDoubleValueField(axis.fixedPoint, value: deltas.fixedPoint * Double(verticalScrollDirection))
-    event.setIntegerValueField(axis.point, value: deltas.point * verticalScrollDirection)
+private func writeDeltas(
+    _ deltas: ScrollDeltas,
+    to event: CGEvent,
+    axis: (integer: CGEventField, fixedPoint: CGEventField, point: CGEventField),
+    direction: Int64
+) {
+    event.setIntegerValueField(axis.integer, value: deltas.integer * direction)
+    event.setDoubleValueField(axis.fixedPoint, value: deltas.fixedPoint * Double(direction))
+    event.setIntegerValueField(axis.point, value: deltas.point * direction)
 }
 
 private func clearDeltas(in event: CGEvent, axis: (integer: CGEventField, fixedPoint: CGEventField, point: CGEventField)) {
@@ -117,10 +243,25 @@ private final class EventTapController {
     private(set) var eventTap: CFMachPort?
     private var activeScrollButtonNumber: Int64?
     private var activeScrollTimer: Timer?
-    private let settings: ScrollRepeatSettings
+    private var settingsObserver: NSObjectProtocol?
+    private let settings: RemappingSettings
 
-    init(settings: ScrollRepeatSettings) {
+    init(settings: RemappingSettings) {
         self.settings = settings
+        settingsObserver = NotificationCenter.default.addObserver(
+            forName: RemappingSettings.didChangeNotification,
+            object: settings,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self, !self.settings.thumbButtonRemappingEnabled else { return }
+            self.stopRepeatingScroll()
+        }
+    }
+
+    deinit {
+        if let settingsObserver {
+            NotificationCenter.default.removeObserver(settingsObserver)
+        }
     }
 
     func createEventTap() -> CFMachPort? {
@@ -151,6 +292,10 @@ private final class EventTapController {
     func process(event: CGEvent) -> Unmanaged<CGEvent>? {
         switch event.type {
         case .otherMouseDown:
+            guard settings.thumbButtonRemappingEnabled else {
+                return Unmanaged.passUnretained(event)
+            }
+
             guard let scrollDirection = scrollDirection(for: event) else {
                 return Unmanaged.passUnretained(event)
             }
@@ -161,15 +306,14 @@ private final class EventTapController {
             return nil
 
         case .otherMouseUp:
-            // Suppress the matching navigation release without generating a
-            // second scroll event.
-            guard isMappedThumbButton(event) else {
-                return Unmanaged.passUnretained(event)
-            }
-
             let buttonNumber = event.getIntegerValueField(.mouseEventButtonNumber)
             if buttonNumber == activeScrollButtonNumber {
                 stopRepeatingScroll()
+                return nil
+            }
+
+            guard settings.thumbButtonRemappingEnabled, isMappedThumbButton(event) else {
+                return Unmanaged.passUnretained(event)
             }
             return nil
 
@@ -182,13 +326,16 @@ private final class EventTapController {
     }
 
     private func processScrollWheel(_ event: CGEvent) -> Unmanaged<CGEvent> {
+        guard settings.thumbwheelRemappingEnabled else {
+            return Unmanaged.passUnretained(event)
+        }
 
         // Shift+scroll remains the native horizontal-scroll gesture.
         guard !event.flags.contains(.maskShift) else {
             return Unmanaged.passUnretained(event)
         }
 
-        if requireLineBasedScrollEvents {
+        if settings.requireLineBasedScrollEvents {
             let isContinuous = event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0
             guard !isContinuous else {
                 return Unmanaged.passUnretained(event)
@@ -218,23 +365,28 @@ private final class EventTapController {
             return Unmanaged.passUnretained(event)
         }
 
-        writeDeltas(horizontalAxis, to: event, axis: verticalAxisFields)
+        writeDeltas(
+            horizontalAxis,
+            to: event,
+            axis: verticalAxisFields,
+            direction: settings.verticalScrollDirection
+        )
         clearDeltas(in: event, axis: horizontalAxisFields)
         return Unmanaged.passUnretained(event)
     }
 
     private func isMappedThumbButton(_ event: CGEvent) -> Bool {
         let buttonNumber = event.getIntegerValueField(.mouseEventButtonNumber)
-        return buttonNumber == backButtonNumber || buttonNumber == forwardButtonNumber
+        return buttonNumber == settings.backButtonNumber || buttonNumber == settings.forwardButtonNumber
     }
 
     private func scrollDirection(for event: CGEvent) -> Int32? {
         let buttonNumber = event.getIntegerValueField(.mouseEventButtonNumber)
 
         switch buttonNumber {
-        case forwardButtonNumber:
+        case settings.forwardButtonNumber:
             return 1
-        case backButtonNumber:
+        case settings.backButtonNumber:
             return -1
         default:
             return nil
@@ -312,34 +464,92 @@ func fail(_ message: String) -> Never {
     exit(EXIT_FAILURE)
 }
 
-/// A small native window exposing the two tunable scroll-repeat settings as
-/// sliders, with live numeric labels and a "Restore Defaults" action. Kept as
-/// plain AppKit (no nib/storyboard) so the whole app stays a single file.
-private final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
-    private let settings: ScrollRepeatSettings
+private func makeStatusItemImage() -> NSImage {
+    let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
+        NSGraphicsContext.current?.shouldAntialias = true
+        NSColor.black.setStroke()
 
+        let mouse = NSBezierPath()
+        mouse.move(to: NSPoint(x: 9, y: 1.5))
+        mouse.curve(
+            to: NSPoint(x: 4.25, y: 9),
+            controlPoint1: NSPoint(x: 5.75, y: 1.8),
+            controlPoint2: NSPoint(x: 4.1, y: 4.8)
+        )
+        mouse.curve(
+            to: NSPoint(x: 9, y: 16.5),
+            controlPoint1: NSPoint(x: 4.4, y: 13.2),
+            controlPoint2: NSPoint(x: 6.1, y: 16.2)
+        )
+        mouse.curve(
+            to: NSPoint(x: 13.75, y: 9),
+            controlPoint1: NSPoint(x: 11.9, y: 16.2),
+            controlPoint2: NSPoint(x: 13.6, y: 13.2)
+        )
+        mouse.curve(
+            to: NSPoint(x: 9, y: 1.5),
+            controlPoint1: NSPoint(x: 13.9, y: 4.8),
+            controlPoint2: NSPoint(x: 12.25, y: 1.8)
+        )
+        mouse.close()
+        mouse.lineWidth = 1.35
+        mouse.lineJoinStyle = .round
+        mouse.stroke()
+
+        let buttonDivider = NSBezierPath()
+        buttonDivider.move(to: NSPoint(x: 9, y: 16.15))
+        buttonDivider.line(to: NSPoint(x: 9, y: 11.9))
+        buttonDivider.lineWidth = 1.15
+        buttonDivider.lineCapStyle = .round
+        buttonDivider.stroke()
+
+        let thumbwheel = NSBezierPath(
+            roundedRect: NSRect(x: 2.65, y: 7.1, width: 2.7, height: 5.2),
+            xRadius: 1.3,
+            yRadius: 1.3
+        )
+        thumbwheel.lineWidth = 1.2
+        thumbwheel.stroke()
+
+        return true
+    }
+    image.isTemplate = true
+    image.accessibilityDescription = "Thumbwheel Remapper"
+    return image
+}
+
+private final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
+    private let settings: RemappingSettings
+
+    private let thumbwheelEnabledCheckbox = NSButton()
+    private let directionPopUp = NSPopUpButton()
+    private let lineBasedCheckbox = NSButton()
+    private let thumbButtonsEnabledCheckbox = NSButton()
+    private let backButtonPopUp = NSPopUpButton()
+    private let forwardButtonPopUp = NSPopUpButton()
     private let delaySlider = NSSlider()
     private let delayValueLabel = NSTextField(labelWithString: "")
     private let intervalSlider = NSSlider()
     private let intervalValueLabel = NSTextField(labelWithString: "")
+    private let buttonValidationLabel = NSTextField(labelWithString: "")
 
-    init(settings: ScrollRepeatSettings) {
+    init(settings: RemappingSettings) {
         self.settings = settings
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 360, height: 174),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
-        window.title = "Thumbwheel Scroll Settings"
+        window.title = "Thumbwheel Remapper"
         window.isReleasedWhenClosed = false
         window.center()
 
         super.init(window: window)
         window.delegate = self
         buildContent(in: window)
-        refreshLabels()
+        refreshControls()
     }
 
     @available(*, unavailable)
@@ -353,52 +563,122 @@ private final class PreferencesWindowController: NSWindowController, NSWindowDel
     }
 
     private func buildContent(in window: NSWindow) {
-        let delayTitle = NSTextField(labelWithString: "Repeat delay before scrolling starts")
-        let intervalTitle = NSTextField(labelWithString: "Repeat interval (scroll speed)")
+        configureCheckbox(
+            thumbwheelEnabledCheckbox,
+            title: "Convert horizontal movement to vertical scrolling",
+            action: #selector(thumbwheelEnabledChanged)
+        )
 
-        delaySlider.minValue = ScrollRepeatDefaults.initialDelayRange.lowerBound
-        delaySlider.maxValue = ScrollRepeatDefaults.initialDelayRange.upperBound
+        directionPopUp.addItems(withTitles: ["Keep scroll direction", "Reverse scroll direction"])
+        directionPopUp.target = self
+        directionPopUp.action = #selector(directionChanged)
+        directionPopUp.widthAnchor.constraint(equalToConstant: 220).isActive = true
+
+        configureCheckbox(
+            lineBasedCheckbox,
+            title: "Ignore continuous trackpad-style gestures",
+            action: #selector(lineBasedRequirementChanged)
+        )
+
+        configureCheckbox(
+            thumbButtonsEnabledCheckbox,
+            title: "Use Back and Forward buttons for vertical scrolling",
+            action: #selector(thumbButtonsEnabledChanged)
+        )
+
+        let buttonTitles = RemappingDefaults.buttonNumberRange.map { "Button \($0)" }
+        backButtonPopUp.addItems(withTitles: buttonTitles)
+        backButtonPopUp.target = self
+        backButtonPopUp.action = #selector(backButtonNumberChanged)
+        backButtonPopUp.widthAnchor.constraint(equalToConstant: 120).isActive = true
+        forwardButtonPopUp.addItems(withTitles: buttonTitles)
+        forwardButtonPopUp.target = self
+        forwardButtonPopUp.action = #selector(forwardButtonNumberChanged)
+        forwardButtonPopUp.widthAnchor.constraint(equalToConstant: 120).isActive = true
+
+        delaySlider.minValue = RemappingDefaults.initialDelayRange.lowerBound
+        delaySlider.maxValue = RemappingDefaults.initialDelayRange.upperBound
         delaySlider.target = self
         delaySlider.action = #selector(delaySliderChanged)
+        delaySlider.widthAnchor.constraint(equalToConstant: 220).isActive = true
 
-        intervalSlider.minValue = ScrollRepeatDefaults.intervalRange.lowerBound
-        intervalSlider.maxValue = ScrollRepeatDefaults.intervalRange.upperBound
+        intervalSlider.minValue = RemappingDefaults.intervalRange.lowerBound
+        intervalSlider.maxValue = RemappingDefaults.intervalRange.upperBound
         intervalSlider.target = self
         intervalSlider.action = #selector(intervalSliderChanged)
+        intervalSlider.widthAnchor.constraint(equalToConstant: 220).isActive = true
 
         delayValueLabel.alignment = .right
         intervalValueLabel.alignment = .right
-
-        let restoreButton = NSButton(title: "Restore Defaults", target: self, action: #selector(restoreDefaultsPressed))
-        let doneButton = NSButton(title: "Done", target: self, action: #selector(donePressed))
-        doneButton.keyEquivalent = "\r"
-
-        let delayRow = NSStackView(views: [delaySlider, delayValueLabel])
-        delayRow.orientation = .horizontal
-        delayRow.spacing = 8
         delayValueLabel.widthAnchor.constraint(equalToConstant: 60).isActive = true
-
-        let intervalRow = NSStackView(views: [intervalSlider, intervalValueLabel])
-        intervalRow.orientation = .horizontal
-        intervalRow.spacing = 8
         intervalValueLabel.widthAnchor.constraint(equalToConstant: 60).isActive = true
 
-        let buttonRow = NSStackView(views: [restoreButton, NSView(), doneButton])
-        buttonRow.orientation = .horizontal
-        buttonRow.spacing = 8
-        buttonRow.distribution = .fill
+        buttonValidationLabel.textColor = .systemRed
+        buttonValidationLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        buttonValidationLabel.isHidden = true
 
-        let stack = NSStackView(views: [delayTitle, delayRow, intervalTitle, intervalRow, buttonRow])
+        let thumbwheelSection = makeSettingsSection(
+            title: "Thumbwheel",
+            rows: [
+                makeFormRow(label: "Remapping:", control: thumbwheelEnabledCheckbox),
+                makeFormRow(label: "Direction:", control: directionPopUp),
+                makeFormRow(label: "Input filtering:", control: lineBasedCheckbox),
+            ]
+        )
+
+        let buttonHelpLabel = NSTextField(
+            wrappingLabelWithString: "Button numbers are zero-based. MX Master Back and Forward are usually 3 and 4."
+        )
+        buttonHelpLabel.textColor = .secondaryLabelColor
+        buttonHelpLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        buttonHelpLabel.preferredMaxLayoutWidth = 300
+
+        let buttonHelpStack = NSStackView(views: [buttonValidationLabel, buttonHelpLabel])
+        buttonHelpStack.orientation = .vertical
+        buttonHelpStack.alignment = .leading
+        buttonHelpStack.spacing = 3
+
+        let thumbButtonSection = makeSettingsSection(
+            title: "Thumb buttons",
+            rows: [
+                makeFormRow(label: "Remapping:", control: thumbButtonsEnabledCheckbox),
+                makeFormRow(label: "Back button:", control: backButtonPopUp),
+                makeFormRow(label: "Forward button:", control: forwardButtonPopUp),
+                makeFormRow(label: "", control: buttonHelpStack),
+                makeFormRow(
+                    label: "Repeat delay:",
+                    control: makeSliderRow(slider: delaySlider, valueLabel: delayValueLabel)
+                ),
+                makeFormRow(
+                    label: "Repeat interval:",
+                    control: makeSliderRow(slider: intervalSlider, valueLabel: intervalValueLabel)
+                ),
+            ]
+        )
+
+        let restoreButton = NSButton(
+            title: "Restore Defaults",
+            target: self,
+            action: #selector(restoreDefaultsPressed)
+        )
+        restoreButton.controlSize = .small
+
+        let separator = NSBox()
+        separator.boxType = .separator
+
+        let footer = NSStackView(views: [restoreButton, NSView()])
+        footer.orientation = .horizontal
+        footer.distribution = .fill
+
+        let stack = NSStackView(views: [thumbwheelSection, separator, thumbButtonSection, footer])
         stack.orientation = .vertical
         stack.alignment = .width
         stack.distribution = .fill
-        stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+        stack.setCustomSpacing(18, after: thumbwheelSection)
+        stack.setCustomSpacing(18, after: separator)
+        stack.setCustomSpacing(22, after: thumbButtonSection)
+        stack.edgeInsets = NSEdgeInsets(top: 24, left: 24, bottom: 20, right: 24)
         stack.translatesAutoresizingMaskIntoConstraints = false
-
-        delayRow.translatesAutoresizingMaskIntoConstraints = false
-        intervalRow.translatesAutoresizingMaskIntoConstraints = false
-        buttonRow.translatesAutoresizingMaskIntoConstraints = false
 
         let contentView = NSView()
         contentView.addSubview(stack)
@@ -412,45 +692,140 @@ private final class PreferencesWindowController: NSWindowController, NSWindowDel
         ])
     }
 
-    private func refreshLabels() {
+    private func configureCheckbox(_ checkbox: NSButton, title: String, action: Selector) {
+        checkbox.setButtonType(.switch)
+        checkbox.title = title
+        checkbox.target = self
+        checkbox.action = action
+    }
+
+    private func makeSettingsSection(title: String, rows: [NSView]) -> NSStackView {
+        let heading = NSTextField(labelWithString: title)
+        heading.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+
+        let rowsStack = NSStackView(views: rows)
+        rowsStack.orientation = .vertical
+        rowsStack.alignment = .width
+        rowsStack.spacing = 10
+
+        let stack = NSStackView(views: [heading, rowsStack])
+        stack.orientation = .vertical
+        stack.alignment = .width
+        stack.spacing = 12
+        return stack
+    }
+
+    private func makeFormRow(label labelText: String, control: NSView) -> NSStackView {
+        let label = NSTextField(labelWithString: labelText)
+        label.alignment = .right
+        label.widthAnchor.constraint(equalToConstant: 112).isActive = true
+
+        let row = NSStackView(views: [label, control, NSView()])
+        row.orientation = .horizontal
+        row.alignment = .firstBaseline
+        row.spacing = 12
+        row.distribution = .fill
+        return row
+    }
+
+    private func makeSliderRow(slider: NSSlider, valueLabel: NSTextField) -> NSStackView {
+        let sliderRow = NSStackView(views: [slider, valueLabel])
+        sliderRow.orientation = .horizontal
+        sliderRow.alignment = .centerY
+        sliderRow.spacing = 8
+        return sliderRow
+    }
+
+    private func refreshControls() {
+        thumbwheelEnabledCheckbox.state = settings.thumbwheelRemappingEnabled ? .on : .off
+        directionPopUp.selectItem(at: settings.verticalScrollDirection < 0 ? 1 : 0)
+        lineBasedCheckbox.state = settings.requireLineBasedScrollEvents ? .on : .off
+        thumbButtonsEnabledCheckbox.state = settings.thumbButtonRemappingEnabled ? .on : .off
+        backButtonPopUp.selectItem(at: Int(settings.backButtonNumber))
+        forwardButtonPopUp.selectItem(at: Int(settings.forwardButtonNumber))
         delaySlider.doubleValue = settings.initialDelay
         intervalSlider.doubleValue = settings.interval
         delayValueLabel.stringValue = String(format: "%.2f s", settings.initialDelay)
         intervalValueLabel.stringValue = String(format: "%.2f s", settings.interval)
+
+        directionPopUp.isEnabled = settings.thumbwheelRemappingEnabled
+        lineBasedCheckbox.isEnabled = settings.thumbwheelRemappingEnabled
+        backButtonPopUp.isEnabled = settings.thumbButtonRemappingEnabled
+        forwardButtonPopUp.isEnabled = settings.thumbButtonRemappingEnabled
+        delaySlider.isEnabled = settings.thumbButtonRemappingEnabled
+        intervalSlider.isEnabled = settings.thumbButtonRemappingEnabled
+    }
+
+    private func showButtonValidation() {
+        buttonValidationLabel.stringValue = "Back and Forward must use different button numbers."
+        buttonValidationLabel.isHidden = false
+        NSSound.beep()
+    }
+
+    @objc private func thumbwheelEnabledChanged() {
+        settings.setThumbwheelRemappingEnabled(thumbwheelEnabledCheckbox.state == .on)
+        refreshControls()
+    }
+
+    @objc private func directionChanged() {
+        settings.setVerticalScrollDirection(directionPopUp.indexOfSelectedItem == 1 ? -1 : 1)
+        refreshControls()
+    }
+
+    @objc private func lineBasedRequirementChanged() {
+        settings.setRequireLineBasedScrollEvents(lineBasedCheckbox.state == .on)
+        refreshControls()
+    }
+
+    @objc private func thumbButtonsEnabledChanged() {
+        settings.setThumbButtonRemappingEnabled(thumbButtonsEnabledCheckbox.state == .on)
+        refreshControls()
+    }
+
+    @objc private func backButtonNumberChanged() {
+        guard settings.setBackButtonNumber(Int64(backButtonPopUp.indexOfSelectedItem)) else {
+            showButtonValidation()
+            refreshControls()
+            return
+        }
+        buttonValidationLabel.isHidden = true
+    }
+
+    @objc private func forwardButtonNumberChanged() {
+        guard settings.setForwardButtonNumber(Int64(forwardButtonPopUp.indexOfSelectedItem)) else {
+            showButtonValidation()
+            refreshControls()
+            return
+        }
+        buttonValidationLabel.isHidden = true
     }
 
     @objc private func delaySliderChanged() {
         settings.setInitialDelay(delaySlider.doubleValue)
-        refreshLabels()
+        refreshControls()
     }
 
     @objc private func intervalSliderChanged() {
         settings.setInterval(intervalSlider.doubleValue)
-        refreshLabels()
+        refreshControls()
     }
 
     @objc private func restoreDefaultsPressed() {
         settings.restoreDefaults()
-        refreshLabels()
+        buttonValidationLabel.isHidden = true
+        refreshControls()
     }
 
-    @objc private func donePressed() {
-        window?.close()
-    }
 }
 
-/// Hosts the persistent menu-bar (status item) UI: a menu with "Preferences…"
-/// and "Quit", backed by the same `ScrollRepeatSettings` the event tap reads
-/// from. This is the smallest UI surface that fits an always-running
-/// background remapper — no dock icon or main window.
 private final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let settings: ScrollRepeatSettings
+    private let settings: RemappingSettings
     private var statusItem: NSStatusItem?
     private var preferencesWindowController: PreferencesWindowController?
     private var eventTapController: EventTapController?
     private var eventTapRunLoopSource: CFRunLoopSource?
 
-    init(settings: ScrollRepeatSettings) {
+    init(settings: RemappingSettings) {
         self.settings = settings
     }
 
@@ -459,7 +834,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         startEventTap()
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.title = "⇕"
+        item.button?.image = makeStatusItemImage()
+        item.button?.imagePosition = .imageOnly
         item.button?.toolTip = "Thumbwheel Scroll Remapper"
 
         let menu = NSMenu()
@@ -543,7 +919,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-let settings = ScrollRepeatSettings()
+let settings = RemappingSettings()
 let app = NSApplication.shared
 private let appDelegate = AppDelegate(settings: settings)
 app.delegate = appDelegate

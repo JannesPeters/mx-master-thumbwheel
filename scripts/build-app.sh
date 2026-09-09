@@ -8,6 +8,8 @@ APP_NAME="Thumbwheel Remapper"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 CONTENTS_DIR="$APP_BUNDLE/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
+RESOURCES_DIR="$CONTENTS_DIR/Resources"
+ICONSET_DIR="$BUILD_DIR/AppIcon.iconset"
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-Thumbwheel Remapper Local Signing}"
 
 if ! security find-identity -v -p codesigning | grep -Fq "\"$SIGNING_IDENTITY\""; then
@@ -17,7 +19,8 @@ if ! security find-identity -v -p codesigning | grep -Fq "\"$SIGNING_IDENTITY\""
 fi
 
 rm -rf "$APP_BUNDLE"
-mkdir -p "$MACOS_DIR"
+rm -rf "$ICONSET_DIR"
+mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 
 swiftc \
     -O \
@@ -26,6 +29,9 @@ swiftc \
     -o "$MACOS_DIR/ThumbwheelRemapper"
 
 cp "$ROOT_DIR/Resources/Info.plist" "$CONTENTS_DIR/Info.plist"
+swift "$ROOT_DIR/scripts/generate-app-icon.swift" "$ICONSET_DIR"
+iconutil --convert icns "$ICONSET_DIR" --output "$RESOURCES_DIR/AppIcon.icns"
+rm -rf "$ICONSET_DIR"
 
 codesign \
     --force \
