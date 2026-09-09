@@ -72,17 +72,19 @@ to open **System Settings > Privacy & Security > Accessibility**. Enable
 - Holding Shift bypasses thumbwheel remapping, preserving native horizontal
   scrolling.
 - Forward and Back `otherMouseDown` events are suppressed and replaced by a
-  line-based vertical scroll event that repeats every "repeat interval"
-  seconds (after an initial "repeat delay") for as long as the button stays
-  down. Matching `otherMouseUp` events are also suppressed and stop the
-  repeat; releasing a different button than the one held has no effect.
+  vertical pixel scroll. Releasing before the long-press delay runs the
+  independently configured single-click animation. Holding beyond the delay
+  starts continuous display-paced scrolling without first adding a click
+  jump. Long-press speed and easing are configured separately. Matching
+  `otherMouseUp` events are also suppressed; releasing a different button than
+  the one held has no effect.
 - The event tap automatically re-enables itself after macOS disables it because
   of a timeout or user-input request.
 
 ## Menu-bar settings UI
 
-The app shows a ⇕ icon in the menu bar while it runs and uses a mouse-shaped
-app icon with its side thumbwheel highlighted. Its menu has:
+The app shows a mouse-shaped icon with its side thumbwheel highlighted in the
+menu bar and as its app icon. Its menu has:
 
 - **Preferences…** — opens a settings window with:
   - **Remapping** under **Thumbwheel** — turns horizontal-to-vertical
@@ -97,10 +99,13 @@ app icon with its side thumbwheel highlighted. Its menu has:
   - **Back button** and **Forward button** — choose the zero-based Quartz
     button numbers used by the connected mouse. The two values must be
     different.
-  - **Repeat delay before scrolling starts** (0.05–2.00 s, default 0.30 s):
-    how long a thumb button must be held before repeating begins.
-  - **Repeat interval (scroll speed)** (0.01–0.50 s, default 0.05 s): how often
-    a scroll event repeats while the button is held; smaller is faster.
+  - **Single click** has independent distance, easing, and animation-duration
+    controls. Distance ranges from 5–1,000 pt (default 40 pt), and duration
+    from 0.05–1.00 s (default 0.18 s). Its easing reaches scrolling speed
+    quickly, then uses most of the duration to decelerate smoothly.
+  - **Press and hold** has independent start-delay, speed, and easing controls.
+    **Time to full speed** controls acceleration, while **Glide after release**
+    controls deceleration. Both range from 0.05–1.00 s.
   - **Restore Defaults** resets every setting.
   - Behavior toggles apply immediately; button assignments and repeat timing
     apply on the next button press. Everything is saved right away, with no
