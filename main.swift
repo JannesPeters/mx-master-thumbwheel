@@ -16,6 +16,8 @@ enum RemappingDefaults {
     static let thumbButtonRemappingEnabled = true
     static let singleClickEasingEnabled = true
     static let buttonScrollEasingEnabled = true
+    static let joystickModeEnabled = true
+    static let middleButtonJoystickEnabled = false
     static let backButtonNumber: Int64 = 3
     static let forwardButtonNumber: Int64 = 4
     static let singlePressDistanceMode = SinglePressDistanceMode.fixed
@@ -43,6 +45,16 @@ private enum SmoothButtonScroll {
     static let maximumFrameDuration: TimeInterval = 1.0 / 30.0
 }
 
+private enum JoystickScroll {
+    static let activationDeadZone = 8.0
+    static let forwardPointsPerSpeedStep = 100.0
+    static let pauseZoneNearEdge = -60.0
+    static let pauseZoneFarEdge = -140.0
+    static let reversePointsPerSpeedStep = 80.0
+    static let minimumSpeedMultiplier = -2.0
+    static let maximumSpeedMultiplier = 3.0
+}
+
 final class RemappingSettings {
     static let didChangeNotification = Notification.Name("RemappingSettings.didChange")
 
@@ -53,6 +65,8 @@ final class RemappingSettings {
     private let thumbButtonRemappingEnabledKey = "ThumbButtonRemappingEnabled"
     private let singleClickEasingEnabledKey = "ThumbButtonSingleClickEasingEnabled"
     private let buttonScrollEasingEnabledKey = "ThumbButtonScrollEasingEnabled"
+    private let joystickModeEnabledKey = "ThumbButtonJoystickModeEnabled"
+    private let middleButtonJoystickEnabledKey = "MiddleButtonJoystickEnabled"
     private let backButtonNumberKey = "BackButtonNumber"
     private let forwardButtonNumberKey = "ForwardButtonNumber"
     private let singlePressDistanceModeKey = "ThumbButtonSinglePressDistanceMode"
@@ -69,6 +83,8 @@ final class RemappingSettings {
     private(set) var thumbButtonRemappingEnabled: Bool
     private(set) var singleClickEasingEnabled: Bool
     private(set) var buttonScrollEasingEnabled: Bool
+    private(set) var joystickModeEnabled: Bool
+    private(set) var middleButtonJoystickEnabled: Bool
     private(set) var backButtonNumber: Int64
     private(set) var forwardButtonNumber: Int64
     private(set) var singlePressDistanceMode: SinglePressDistanceMode
@@ -113,6 +129,16 @@ final class RemappingSettings {
             in: defaults,
             forKey: buttonScrollEasingEnabledKey,
             fallback: RemappingDefaults.buttonScrollEasingEnabled
+        )
+        joystickModeEnabled = Self.storedBool(
+            in: defaults,
+            forKey: joystickModeEnabledKey,
+            fallback: RemappingDefaults.joystickModeEnabled
+        )
+        middleButtonJoystickEnabled = Self.storedBool(
+            in: defaults,
+            forKey: middleButtonJoystickEnabledKey,
+            fallback: RemappingDefaults.middleButtonJoystickEnabled
         )
         backButtonNumber = Self.clamp(
             Self.storedInt64(
@@ -211,6 +237,20 @@ final class RemappingSettings {
         notifyChanged()
     }
 
+    func setJoystickModeEnabled(_ enabled: Bool) {
+        guard enabled != joystickModeEnabled else { return }
+        joystickModeEnabled = enabled
+        defaults.set(enabled, forKey: joystickModeEnabledKey)
+        notifyChanged()
+    }
+
+    func setMiddleButtonJoystickEnabled(_ enabled: Bool) {
+        guard enabled != middleButtonJoystickEnabled else { return }
+        middleButtonJoystickEnabled = enabled
+        defaults.set(enabled, forKey: middleButtonJoystickEnabledKey)
+        notifyChanged()
+    }
+
     @discardableResult
     func setBackButtonNumber(_ buttonNumber: Int64) -> Bool {
         setButtonNumbers(back: buttonNumber, forward: forwardButtonNumber)
@@ -300,6 +340,8 @@ final class RemappingSettings {
         setThumbButtonRemappingEnabled(RemappingDefaults.thumbButtonRemappingEnabled)
         setSingleClickEasingEnabled(RemappingDefaults.singleClickEasingEnabled)
         setButtonScrollEasingEnabled(RemappingDefaults.buttonScrollEasingEnabled)
+        setJoystickModeEnabled(RemappingDefaults.joystickModeEnabled)
+        setMiddleButtonJoystickEnabled(RemappingDefaults.middleButtonJoystickEnabled)
         setButtonNumbers(
             back: RemappingDefaults.backButtonNumber,
             forward: RemappingDefaults.forwardButtonNumber
@@ -487,6 +529,208 @@ private enum ButtonScrollPhase: Equatable {
     case animatingClick
 }
 
+private final class JoystickHUDView: NSView {
+    var direction: Int32 = 1
+    var speedMultiplier = 1.0
+    var isCenteredMode = false
+
+    override var isFlipped: Bool {
+        false
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        let center = NSPoint(x: bounds.midX, y: 63)
+        let dialRadius = 32.0
+        let dialRect = NSRect(
+            x: center.x - dialRadius,
+            y: center.y - dialRadius,
+            width: dialRadius * 2,
+            height: dialRadius * 2
+        )
+
+        let dial = NSBezierPath(ovalIn: dialRect)
+        NSGraphicsContext.saveGraphicsState()
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.22)
+        shadow.shadowBlurRadius = 10
+        shadow.shadowOffset = NSSize(width: 0, height: -2)
+        shadow.set()
+        NSColor.windowBackgroundColor.withAlphaComponent(0.96).setFill()
+        dial.fill()
+        NSGraphicsContext.restoreGraphicsState()
+
+        let dialBorder = NSBezierPath(ovalIn: dialRect.insetBy(dx: 0.5, dy: 0.5))
+        dialBorder.lineWidth = 1
+        NSColor.separatorColor.withAlphaComponent(0.75).setStroke()
+        dialBorder.stroke()
+
+        let trackExtent = 19.0
+        let track = NSBezierPath()
+        track.move(to: NSPoint(x: center.x, y: center.y - trackExtent))
+        track.line(to: NSPoint(x: center.x, y: center.y + trackExtent))
+        track.lineWidth = 2
+        track.lineCapStyle = .round
+        NSColor.tertiaryLabelColor.withAlphaComponent(0.6).setStroke()
+        track.stroke()
+
+        let pauseOffset = isCenteredMode
+            ? 0
+            : -(trackExtent / (1 - JoystickScroll.minimumSpeedMultiplier)) * Double(direction)
+        let pauseZone = NSBezierPath(
+            roundedRect: NSRect(
+                x: center.x - 5,
+                y: center.y + pauseOffset - 7,
+                width: 10,
+                height: 14
+            ),
+            xRadius: 5,
+            yRadius: 5
+        )
+        NSColor.secondaryLabelColor.withAlphaComponent(0.18).setFill()
+        pauseZone.fill()
+
+        let normalizedThrottle: Double
+        if isCenteredMode, speedMultiplier >= 0 {
+            normalizedThrottle = speedMultiplier / JoystickScroll.maximumSpeedMultiplier
+        } else if isCenteredMode {
+            normalizedThrottle =
+                speedMultiplier / abs(JoystickScroll.minimumSpeedMultiplier)
+        } else if speedMultiplier >= 1 {
+            normalizedThrottle =
+                (speedMultiplier - 1) / (JoystickScroll.maximumSpeedMultiplier - 1)
+        } else {
+            normalizedThrottle =
+                -(1 - speedMultiplier) / (1 - JoystickScroll.minimumSpeedMultiplier)
+        }
+        let throttleOffset =
+            min(max(normalizedThrottle, -1), 1) * trackExtent * Double(direction)
+        let throttlePoint = NSPoint(x: center.x, y: center.y + throttleOffset)
+        let isReversing = speedMultiplier < -0.05
+        let activeColor = isReversing ? NSColor.systemOrange : NSColor.systemBlue
+
+        if abs(throttleOffset) > 0.5 {
+            let activeTrack = NSBezierPath()
+            activeTrack.move(to: center)
+            activeTrack.line(to: throttlePoint)
+            activeTrack.lineWidth = 3
+            activeTrack.lineCapStyle = .round
+            activeColor.withAlphaComponent(0.8).setStroke()
+            activeTrack.stroke()
+        }
+
+        let neutralMark = NSBezierPath()
+        neutralMark.move(to: NSPoint(x: center.x - 7, y: center.y))
+        neutralMark.line(to: NSPoint(x: center.x + 7, y: center.y))
+        neutralMark.lineWidth = 1
+        NSColor.secondaryLabelColor.withAlphaComponent(0.7).setStroke()
+        neutralMark.stroke()
+
+        let knobRadius = 5.0
+        activeColor.setFill()
+        NSBezierPath(
+            ovalIn: NSRect(
+                x: throttlePoint.x - knobRadius,
+                y: throttlePoint.y - knobRadius,
+                width: knobRadius * 2,
+                height: knobRadius * 2
+            )
+        ).fill()
+
+        let effectiveDirection = isReversing ? -direction : direction
+        let arrowDirection = Double(effectiveDirection)
+        let arrowTipY = center.y + (26 * arrowDirection)
+        let arrow = NSBezierPath()
+        arrow.move(to: NSPoint(x: center.x - 4, y: arrowTipY - (4 * arrowDirection)))
+        arrow.line(to: NSPoint(x: center.x, y: arrowTipY))
+        arrow.line(to: NSPoint(x: center.x + 4, y: arrowTipY - (4 * arrowDirection)))
+        arrow.lineWidth = 1.5
+        arrow.lineCapStyle = .round
+        arrow.lineJoinStyle = .round
+        activeColor.setStroke()
+        arrow.stroke()
+
+        let speedText = abs(speedMultiplier) < 0.05
+            ? "Paused"
+            : String(format: "%.1f×", speedMultiplier)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedDigitSystemFont(
+                ofSize: NSFont.smallSystemFontSize,
+                weight: .semibold
+            ),
+            .foregroundColor: NSColor.labelColor,
+        ]
+        let textSize = speedText.size(withAttributes: attributes)
+        speedText.draw(
+            at: NSPoint(x: bounds.midX - (textSize.width / 2), y: 9),
+            withAttributes: attributes
+        )
+    }
+}
+
+private final class JoystickHUDController {
+    private let panel: NSPanel
+    private let hudView: JoystickHUDView
+    private let panelSize = NSSize(width: 88, height: 106)
+
+    init() {
+        hudView = JoystickHUDView(frame: NSRect(origin: .zero, size: panelSize))
+        panel = NSPanel(
+            contentRect: NSRect(origin: .zero, size: panelSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = true
+        panel.level = .statusBar
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.animationBehavior = .none
+        panel.contentView = hudView
+    }
+
+    func show(at cursorLocation: NSPoint, direction: Int32, isCenteredMode: Bool = false) {
+        hudView.direction = direction
+        hudView.isCenteredMode = isCenteredMode
+        positionPanel(around: cursorLocation)
+        update(speedMultiplier: isCenteredMode ? 0 : 1)
+        panel.orderFrontRegardless()
+    }
+
+    func update(speedMultiplier: Double) {
+        hudView.speedMultiplier = speedMultiplier
+        hudView.needsDisplay = true
+    }
+
+    func hide() {
+        panel.orderOut(nil)
+    }
+
+    private func positionPanel(around cursorLocation: NSPoint) {
+        var origin = NSPoint(
+            x: cursorLocation.x - (panelSize.width / 2),
+            y: cursorLocation.y - 63
+        )
+
+        if let screen = NSScreen.screens.first(where: { $0.frame.contains(cursorLocation) }) {
+            let visibleFrame = screen.visibleFrame.insetBy(dx: 8, dy: 8)
+            origin.x = min(
+                max(origin.x, visibleFrame.minX),
+                visibleFrame.maxX - panelSize.width
+            )
+            origin.y = min(
+                max(origin.y, visibleFrame.minY),
+                visibleFrame.maxY - panelSize.height
+            )
+        }
+
+        panel.setFrameOrigin(origin)
+    }
+}
+
 private final class EventTapController {
     private(set) var eventTap: CFMachPort?
     private var activeScrollButtonNumber: Int64?
@@ -501,6 +745,13 @@ private final class EventTapController {
     private var activeEaseInDuration: TimeInterval = 0
     private var activeEaseOutDuration: TimeInterval = 0
     private var activeHoldUsesEasing = false
+    private var activeJoystickModeEnabled = false
+    private var activeMiddleButtonJoystick = false
+    private var joystickAnchorLocation: NSPoint?
+    private var joystickDisplacement = 0.0
+    private var joystickSpeedMultiplier = 1.0
+    private var isCursorLockedForJoystick = false
+    private var hiddenCursorDisplayID: CGDirectDisplayID?
     private var phaseStartTimestamp: TimeInterval?
     private var holdReleaseVelocity = 0.0
     private var lastScrollFrameTimestamp: TimeInterval?
@@ -510,6 +761,7 @@ private final class EventTapController {
     private var scrollRequestID = 0
     private var settingsObserver: NSObjectProtocol?
     private let settings: RemappingSettings
+    private let joystickHUD = JoystickHUDController()
 
     init(settings: RemappingSettings) {
         self.settings = settings
@@ -518,8 +770,7 @@ private final class EventTapController {
             object: settings,
             queue: .main
         ) { [weak self] _ in
-            guard let self, !self.settings.thumbButtonRemappingEnabled else { return }
-            self.stopButtonScroll()
+            self?.settingsDidChange()
         }
     }
 
@@ -527,13 +778,18 @@ private final class EventTapController {
         if let settingsObserver {
             NotificationCenter.default.removeObserver(settingsObserver)
         }
+        unlockCursorForJoystick()
     }
 
     func createEventTap() -> CFMachPort? {
         let eventsOfInterest =
             (CGEventMask(1) << CGEventType.scrollWheel.rawValue) |
             (CGEventMask(1) << CGEventType.otherMouseDown.rawValue) |
-            (CGEventMask(1) << CGEventType.otherMouseUp.rawValue)
+            (CGEventMask(1) << CGEventType.otherMouseUp.rawValue) |
+            (CGEventMask(1) << CGEventType.mouseMoved.rawValue) |
+            (CGEventMask(1) << CGEventType.leftMouseDragged.rawValue) |
+            (CGEventMask(1) << CGEventType.rightMouseDragged.rawValue) |
+            (CGEventMask(1) << CGEventType.otherMouseDragged.rawValue)
         let userInfo = Unmanaged.passUnretained(self).toOpaque()
 
         let eventTap = CGEvent.tapCreate(
@@ -554,6 +810,48 @@ private final class EventTapController {
         CGEvent.tapEnable(tap: eventTap, enable: true)
     }
 
+    private func settingsDidChange() {
+        guard settings.thumbButtonRemappingEnabled else {
+            stopButtonScroll()
+            return
+        }
+        if activeMiddleButtonJoystick,
+           (!settings.joystickModeEnabled || !settings.middleButtonJoystickEnabled) {
+            stopButtonScroll()
+            return
+        }
+
+        switch buttonScrollPhase {
+        case .waitingForHold:
+            activeJoystickModeEnabled = settings.joystickModeEnabled
+
+        case .holding:
+            guard settings.joystickModeEnabled != activeJoystickModeEnabled else { return }
+            activeJoystickModeEnabled = settings.joystickModeEnabled
+            joystickSpeedMultiplier = 1
+
+            if activeJoystickModeEnabled {
+                let cursorLocation = NSEvent.mouseLocation
+                joystickAnchorLocation = cursorLocation
+                joystickDisplacement = 0
+                lockCursorForJoystick()
+                joystickHUD.show(
+                    at: cursorLocation,
+                    direction: activeScrollDirection,
+                    isCenteredMode: activeMiddleButtonJoystick
+                )
+            } else {
+                joystickAnchorLocation = nil
+                joystickDisplacement = 0
+                unlockCursorForJoystick()
+                joystickHUD.hide()
+            }
+
+        case .idle, .waitingForPageDistance, .releasingHold, .animatingClick:
+            break
+        }
+    }
+
     func process(event: CGEvent) -> Unmanaged<CGEvent>? {
         switch event.type {
         case .otherMouseDown:
@@ -561,11 +859,24 @@ private final class EventTapController {
                 return Unmanaged.passUnretained(event)
             }
 
+            let buttonNumber = event.getIntegerValueField(.mouseEventButtonNumber)
+            if buttonNumber == 2,
+               settings.joystickModeEnabled,
+               settings.middleButtonJoystickEnabled {
+                startButtonScroll(
+                    direction: 1,
+                    buttonNumber: buttonNumber,
+                    pointerLocation: event.location,
+                    startsImmediately: true,
+                    startsPaused: true
+                )
+                return nil
+            }
+
             guard let scrollDirection = scrollDirection(for: event) else {
                 return Unmanaged.passUnretained(event)
             }
 
-            let buttonNumber = event.getIntegerValueField(.mouseEventButtonNumber)
             startButtonScroll(
                 direction: scrollDirection,
                 buttonNumber: buttonNumber,
@@ -580,13 +891,22 @@ private final class EventTapController {
                 return nil
             }
 
-            guard settings.thumbButtonRemappingEnabled, isMappedThumbButton(event) else {
+            guard settings.thumbButtonRemappingEnabled, isMappedScrollButton(event) else {
                 return Unmanaged.passUnretained(event)
             }
             return nil
 
         case .scrollWheel:
             return processScrollWheel(event)
+
+        case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
+            guard buttonScrollPhase == .holding, activeJoystickModeEnabled else {
+                return Unmanaged.passUnretained(event)
+            }
+
+            joystickDisplacement -= event.getDoubleValueField(.mouseEventDeltaY)
+            updateJoystickSpeed()
+            return nil
 
         default:
             return Unmanaged.passUnretained(event)
@@ -643,9 +963,15 @@ private final class EventTapController {
         return Unmanaged.passUnretained(event)
     }
 
-    private func isMappedThumbButton(_ event: CGEvent) -> Bool {
+    private func isMappedScrollButton(_ event: CGEvent) -> Bool {
         let buttonNumber = event.getIntegerValueField(.mouseEventButtonNumber)
-        return buttonNumber == settings.backButtonNumber || buttonNumber == settings.forwardButtonNumber
+        return buttonNumber == settings.backButtonNumber
+            || buttonNumber == settings.forwardButtonNumber
+            || (
+                buttonNumber == 2
+                    && settings.joystickModeEnabled
+                    && settings.middleButtonJoystickEnabled
+            )
     }
 
     private func scrollDirection(for event: CGEvent) -> Int32? {
@@ -664,22 +990,29 @@ private final class EventTapController {
     private func startButtonScroll(
         direction: Int32,
         buttonNumber: Int64,
-        pointerLocation: CGPoint
+        pointerLocation: CGPoint,
+        startsImmediately: Bool = false,
+        startsPaused: Bool = false
     ) {
         stopButtonScroll()
         activeScrollButtonNumber = buttonNumber
         activeScrollDirection = direction
-        activeSinglePressDistanceMode = settings.singlePressDistanceMode
-        switch activeSinglePressDistanceMode {
-        case .fixed:
-            activeSinglePressDistance = settings.singlePressDistance
-        case .page:
+        if startsPaused {
+            activeSinglePressDistanceMode = .fixed
             activeSinglePressDistance = 0
-            let requestID = scrollRequestID
-            DispatchQueue.global(qos: .userInitiated).async {
-                let distance = PageScrollDistanceResolver.distance(at: pointerLocation)
-                DispatchQueue.main.async { [weak self] in
-                    self?.completePageDistance(distance, requestID: requestID)
+        } else {
+            activeSinglePressDistanceMode = settings.singlePressDistanceMode
+            switch activeSinglePressDistanceMode {
+            case .fixed:
+                activeSinglePressDistance = settings.singlePressDistance
+            case .page:
+                activeSinglePressDistance = 0
+                let requestID = scrollRequestID
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let distance = PageScrollDistanceResolver.distance(at: pointerLocation)
+                    DispatchQueue.main.async { [weak self] in
+                        self?.completePageDistance(distance, requestID: requestID)
+                    }
                 }
             }
         }
@@ -689,9 +1022,19 @@ private final class EventTapController {
         activeEaseInDuration = settings.easeInDuration
         activeEaseOutDuration = settings.easeOutDuration
         activeHoldUsesEasing = settings.buttonScrollEasingEnabled
+        activeJoystickModeEnabled = startsPaused || settings.joystickModeEnabled
+        activeMiddleButtonJoystick = startsPaused
+        joystickAnchorLocation = nil
+        joystickDisplacement = 0
+        joystickSpeedMultiplier = startsPaused ? 0 : 1
         fractionalPointCarry = 0
 
         buttonScrollPhase = .waitingForHold
+        if startsImmediately {
+            beginLongPressScroll()
+            return
+        }
+
         let timer = Timer(
             fire: Date().addingTimeInterval(settings.initialDelay),
             interval: 0,
@@ -714,6 +1057,17 @@ private final class EventTapController {
         phaseStartTimestamp = timestamp
         lastScrollFrameTimestamp = timestamp
         fractionalPointCarry = 0
+        if activeJoystickModeEnabled {
+            let cursorLocation = NSEvent.mouseLocation
+            joystickAnchorLocation = cursorLocation
+            joystickDisplacement = 0
+            lockCursorForJoystick()
+            joystickHUD.show(
+                at: cursorLocation,
+                direction: activeScrollDirection,
+                isCenteredMode: activeMiddleButtonJoystick
+            )
+        }
         startScrollFrameTimer(interval: SmoothButtonScroll.frameInterval)
     }
 
@@ -782,6 +1136,9 @@ private final class EventTapController {
 
         case .holding:
             activeScrollButtonNumber = nil
+            updateJoystickSpeed()
+            unlockCursorForJoystick()
+            joystickHUD.hide()
             guard activeHoldUsesEasing else {
                 stopButtonScroll()
                 return
@@ -812,6 +1169,13 @@ private final class EventTapController {
         activeEaseInDuration = 0
         activeEaseOutDuration = 0
         activeHoldUsesEasing = false
+        activeJoystickModeEnabled = false
+        activeMiddleButtonJoystick = false
+        joystickAnchorLocation = nil
+        joystickDisplacement = 0
+        joystickSpeedMultiplier = 1
+        unlockCursorForJoystick()
+        joystickHUD.hide()
         phaseStartTimestamp = nil
         holdReleaseVelocity = 0
         lastScrollFrameTimestamp = nil
@@ -826,6 +1190,7 @@ private final class EventTapController {
 
         switch buttonScrollPhase {
         case .holding:
+            updateJoystickSpeed()
             postAccumulatedScroll(points: holdVelocity(at: timestamp) * frameDuration)
 
         case .releasingHold:
@@ -866,12 +1231,106 @@ private final class EventTapController {
     }
 
     private func holdVelocity(at timestamp: TimeInterval) -> Double {
+        let baseVelocity: Double
         guard activeHoldUsesEasing, let phaseStartTimestamp else {
-            return activeScrollPointsPerSecond
+            return activeScrollPointsPerSecond * joystickSpeedMultiplier
         }
 
         let easeInProgress = min(max(timestamp - phaseStartTimestamp, 0) / activeEaseInDuration, 1)
-        return activeScrollPointsPerSecond * smoothStep(easeInProgress)
+        baseVelocity = activeScrollPointsPerSecond * smoothStep(easeInProgress)
+        return baseVelocity * joystickSpeedMultiplier
+    }
+
+    private func updateJoystickSpeed() {
+        guard activeJoystickModeEnabled, joystickAnchorLocation != nil else { return }
+
+        let signedDistance = joystickDisplacement * Double(activeScrollDirection)
+        if activeMiddleButtonJoystick {
+            let centeredPauseRadius =
+                abs(JoystickScroll.pauseZoneFarEdge - JoystickScroll.pauseZoneNearEdge) / 2
+
+            if abs(signedDistance) <= centeredPauseRadius {
+                joystickSpeedMultiplier = 0
+            } else if signedDistance > 0 {
+                joystickSpeedMultiplier = min(
+                    (signedDistance - centeredPauseRadius)
+                        / JoystickScroll.forwardPointsPerSpeedStep,
+                    JoystickScroll.maximumSpeedMultiplier
+                )
+            } else {
+                joystickSpeedMultiplier = max(
+                    (signedDistance + centeredPauseRadius)
+                        / JoystickScroll.reversePointsPerSpeedStep,
+                    JoystickScroll.minimumSpeedMultiplier
+                )
+            }
+
+            joystickHUD.update(speedMultiplier: joystickSpeedMultiplier)
+            return
+        }
+
+        let adjustedDistance: Double
+        if abs(signedDistance) <= JoystickScroll.activationDeadZone {
+            adjustedDistance = 0
+        } else if signedDistance > 0 {
+            adjustedDistance = signedDistance - JoystickScroll.activationDeadZone
+        } else {
+            adjustedDistance = signedDistance + JoystickScroll.activationDeadZone
+        }
+
+        switch adjustedDistance {
+        case 0...:
+            joystickSpeedMultiplier = min(
+                1 + (adjustedDistance / JoystickScroll.forwardPointsPerSpeedStep),
+                JoystickScroll.maximumSpeedMultiplier
+            )
+
+        case JoystickScroll.pauseZoneNearEdge..<0:
+            joystickSpeedMultiplier =
+                1 - (adjustedDistance / JoystickScroll.pauseZoneNearEdge)
+
+        case JoystickScroll.pauseZoneFarEdge...JoystickScroll.pauseZoneNearEdge:
+            joystickSpeedMultiplier = 0
+
+        default:
+            joystickSpeedMultiplier = max(
+                -(
+                    (JoystickScroll.pauseZoneFarEdge - adjustedDistance)
+                        / JoystickScroll.reversePointsPerSpeedStep
+                ),
+                JoystickScroll.minimumSpeedMultiplier
+            )
+        }
+
+        joystickHUD.update(speedMultiplier: joystickSpeedMultiplier)
+    }
+
+    private func lockCursorForJoystick() {
+        guard !isCursorLockedForJoystick else { return }
+        CGAssociateMouseAndMouseCursorPosition(boolean_t(0))
+
+        let cursorLocation = joystickAnchorLocation ?? NSEvent.mouseLocation
+        if let screen = NSScreen.screens.first(where: { $0.frame.contains(cursorLocation) }),
+           let screenNumber = screen.deviceDescription[
+               NSDeviceDescriptionKey("NSScreenNumber")
+           ] as? NSNumber {
+            let displayID = CGDirectDisplayID(screenNumber.uint32Value)
+            if CGDisplayHideCursor(displayID) == .success {
+                hiddenCursorDisplayID = displayID
+            }
+        }
+
+        isCursorLockedForJoystick = true
+    }
+
+    private func unlockCursorForJoystick() {
+        guard isCursorLockedForJoystick else { return }
+        if let hiddenCursorDisplayID {
+            CGDisplayShowCursor(hiddenCursorDisplayID)
+            self.hiddenCursorDisplayID = nil
+        }
+        CGAssociateMouseAndMouseCursorPosition(boolean_t(1))
+        isCursorLockedForJoystick = false
     }
 
     private func elapsedFrameDuration(at timestamp: TimeInterval) -> TimeInterval {
@@ -891,14 +1350,14 @@ private final class EventTapController {
         fractionalPointCarry += points
 
         let wholePoints = Int32(fractionalPointCarry.rounded(.towardZero))
-        guard wholePoints > 0 else { return }
+        guard wholePoints != 0 else { return }
         fractionalPointCarry -= Double(wholePoints)
         postVerticalScroll(direction: activeScrollDirection, points: wholePoints)
     }
 
     private func flushAccumulatedScroll() {
         let remainingPoints = Int32(fractionalPointCarry.rounded())
-        guard remainingPoints > 0 else { return }
+        guard remainingPoints != 0 else { return }
         fractionalPointCarry = 0
         postVerticalScroll(direction: activeScrollDirection, points: remainingPoints)
     }
@@ -1041,6 +1500,8 @@ private final class PreferencesWindowController: NSWindowController, NSWindowDel
     private let delayValueLabel = NSTextField(labelWithString: "")
     private let intervalSlider = NSSlider()
     private let intervalValueLabel = NSTextField(labelWithString: "")
+    private let joystickModeCheckbox = NSButton()
+    private let middleButtonJoystickCheckbox = NSButton()
     private let longPressEasingCheckbox = NSButton()
     private let easeInSlider = NSSlider()
     private let easeInValueLabel = NSTextField(labelWithString: "")
@@ -1052,7 +1513,7 @@ private final class PreferencesWindowController: NSWindowController, NSWindowDel
         self.settings = settings
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 700),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 785),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -1109,6 +1570,16 @@ private final class PreferencesWindowController: NSWindowController, NSWindowDel
             longPressEasingCheckbox,
             title: "Ease acceleration and release",
             action: #selector(longPressEasingChanged)
+        )
+        configureCheckbox(
+            joystickModeCheckbox,
+            title: "Move the pointer to control speed",
+            action: #selector(joystickModeChanged)
+        )
+        configureCheckbox(
+            middleButtonJoystickCheckbox,
+            title: "Press the scroll wheel to start paused",
+            action: #selector(middleButtonJoystickChanged)
         )
 
         let buttonTitles = RemappingDefaults.buttonNumberRange.map { "Button \($0)" }
@@ -1188,12 +1659,9 @@ private final class PreferencesWindowController: NSWindowController, NSWindowDel
             ]
         )
 
-        let buttonHelpLabel = NSTextField(
-            wrappingLabelWithString: "Button numbers are zero-based. MX Master Back and Forward are usually 3 and 4."
+        let buttonHelpLabel = makeHelpLabel(
+            "Button numbers are zero-based. MX Master Back and Forward are usually 3 and 4."
         )
-        buttonHelpLabel.textColor = .secondaryLabelColor
-        buttonHelpLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        buttonHelpLabel.preferredMaxLayoutWidth = 300
 
         let buttonHelpStack = NSStackView(views: [buttonValidationLabel, buttonHelpLabel])
         buttonHelpStack.orientation = .vertical
@@ -1228,6 +1696,14 @@ private final class PreferencesWindowController: NSWindowController, NSWindowDel
                 makeFormRow(
                     label: "Speed:",
                     control: makeSliderRow(slider: intervalSlider, valueLabel: intervalValueLabel)
+                ),
+                makeFormRow(label: "Joystick mode:", control: joystickModeCheckbox),
+                makeFormRow(label: "Middle button:", control: middleButtonJoystickCheckbox),
+                makeFormRow(
+                    label: "",
+                    control: makeHelpLabel(
+                        "Back and Forward begin at their configured speed. The middle button opens the joystick paused; move up or down to scroll."
+                    )
                 ),
                 makeFormRow(label: "Easing:", control: longPressEasingCheckbox),
                 makeFormRow(
@@ -1307,6 +1783,14 @@ private final class PreferencesWindowController: NSWindowController, NSWindowDel
         return heading
     }
 
+    private func makeHelpLabel(_ text: String) -> NSTextField {
+        let label = NSTextField(wrappingLabelWithString: text)
+        label.textColor = .secondaryLabelColor
+        label.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        label.preferredMaxLayoutWidth = 300
+        return label
+    }
+
     private func makeFormRow(label labelText: String, control: NSView) -> NSStackView {
         let label = NSTextField(labelWithString: labelText)
         label.alignment = .right
@@ -1357,6 +1841,9 @@ private final class PreferencesWindowController: NSWindowController, NSWindowDel
         singleClickDurationSlider.doubleValue = settings.singleClickDuration
         delaySlider.doubleValue = settings.initialDelay
         intervalSlider.doubleValue = settings.interval
+        joystickModeCheckbox.state = settings.joystickModeEnabled ? .on : .off
+        middleButtonJoystickCheckbox.state =
+            settings.middleButtonJoystickEnabled ? .on : .off
         longPressEasingCheckbox.state = settings.buttonScrollEasingEnabled ? .on : .off
         easeInSlider.doubleValue = settings.easeInDuration
         easeOutSlider.doubleValue = settings.easeOutDuration
@@ -1388,6 +1875,9 @@ private final class PreferencesWindowController: NSWindowController, NSWindowDel
             settings.thumbButtonRemappingEnabled && settings.singleClickEasingEnabled
         delaySlider.isEnabled = settings.thumbButtonRemappingEnabled
         intervalSlider.isEnabled = settings.thumbButtonRemappingEnabled
+        joystickModeCheckbox.isEnabled = settings.thumbButtonRemappingEnabled
+        middleButtonJoystickCheckbox.isEnabled =
+            settings.thumbButtonRemappingEnabled && settings.joystickModeEnabled
         longPressEasingCheckbox.isEnabled = settings.thumbButtonRemappingEnabled
         easeInSlider.isEnabled = settings.thumbButtonRemappingEnabled && settings.buttonScrollEasingEnabled
         easeOutSlider.isEnabled = settings.thumbButtonRemappingEnabled && settings.buttonScrollEasingEnabled
@@ -1426,6 +1916,16 @@ private final class PreferencesWindowController: NSWindowController, NSWindowDel
 
     @objc private func longPressEasingChanged() {
         settings.setButtonScrollEasingEnabled(longPressEasingCheckbox.state == .on)
+        refreshControls()
+    }
+
+    @objc private func joystickModeChanged() {
+        settings.setJoystickModeEnabled(joystickModeCheckbox.state == .on)
+        refreshControls()
+    }
+
+    @objc private func middleButtonJoystickChanged() {
+        settings.setMiddleButtonJoystickEnabled(middleButtonJoystickCheckbox.state == .on)
         refreshControls()
     }
 
