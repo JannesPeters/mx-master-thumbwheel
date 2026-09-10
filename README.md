@@ -99,10 +99,12 @@ menu bar and as its app icon. Its menu has:
   - **Back button** and **Forward button** — choose the zero-based Quartz
     button numbers used by the connected mouse. The two values must be
     different.
-  - **Single click** has independent distance, easing, and animation-duration
-    controls. Distance ranges from 5–1,000 pt (default 40 pt), and duration
-    from 0.05–1.00 s (default 0.18 s). Its easing reaches scrolling speed
-    quickly, then uses most of the duration to decelerate smoothly.
+  - **Single click** can use a fixed distance or scroll one page. Fixed distance
+    ranges from 5–1,000 pt (default 40 pt). One page uses the visible scroll
+    area under the pointer, falling back to the containing window or display.
+    Easing and animation duration apply to either mode; duration ranges from
+    0.05–1.00 s (default 0.18 s). Its easing reaches scrolling speed quickly,
+    then uses most of the duration to decelerate smoothly.
   - **Press and hold** has independent start-delay, speed, and easing controls.
     **Time to full speed** controls acceleration, while **Glide after release**
     controls deceleration. Both range from 0.05–1.00 s.
