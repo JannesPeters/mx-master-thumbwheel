@@ -4,6 +4,11 @@ import CoreGraphics
 import Darwin
 import Foundation
 
+enum SinglePressDistanceMode: Int64 {
+    case fixed
+    case page
+}
+
 enum RemappingDefaults {
     static let thumbwheelRemappingEnabled = true
     static let verticalScrollDirection: Int64 = 1
@@ -13,6 +18,7 @@ enum RemappingDefaults {
     static let buttonScrollEasingEnabled = true
     static let backButtonNumber: Int64 = 3
     static let forwardButtonNumber: Int64 = 4
+    static let singlePressDistanceMode = SinglePressDistanceMode.fixed
     static let singlePressDistance = 40.0
     static let singleClickDuration: TimeInterval = 0.18
     static let initialDelay: TimeInterval = 0.3
@@ -49,6 +55,7 @@ final class RemappingSettings {
     private let buttonScrollEasingEnabledKey = "ThumbButtonScrollEasingEnabled"
     private let backButtonNumberKey = "BackButtonNumber"
     private let forwardButtonNumberKey = "ForwardButtonNumber"
+    private let singlePressDistanceModeKey = "ThumbButtonSinglePressDistanceMode"
     private let singlePressDistanceKey = "ThumbButtonSinglePressDistance"
     private let singleClickDurationKey = "ThumbButtonSingleClickDuration"
     private let initialDelayKey = "ThumbButtonScrollRepeatInitialDelay"
@@ -64,6 +71,7 @@ final class RemappingSettings {
     private(set) var buttonScrollEasingEnabled: Bool
     private(set) var backButtonNumber: Int64
     private(set) var forwardButtonNumber: Int64
+    private(set) var singlePressDistanceMode: SinglePressDistanceMode
     private(set) var singlePressDistance: Double
     private(set) var singleClickDuration: TimeInterval
     private(set) var initialDelay: TimeInterval
@@ -127,6 +135,13 @@ final class RemappingSettings {
             forwardButtonNumber = RemappingDefaults.forwardButtonNumber
         }
 
+        singlePressDistanceMode = SinglePressDistanceMode(
+            rawValue: Self.storedInt64(
+                in: defaults,
+                forKey: singlePressDistanceModeKey,
+                fallback: RemappingDefaults.singlePressDistanceMode.rawValue
+            )
+        ) ?? RemappingDefaults.singlePressDistanceMode
         let storedSinglePressDistance = defaults.object(forKey: singlePressDistanceKey) as? Double
         let storedSingleClickDuration = defaults.object(forKey: singleClickDurationKey) as? Double
         let storedDelay = defaults.object(forKey: initialDelayKey) as? Double
@@ -239,6 +254,13 @@ final class RemappingSettings {
         notifyChanged()
     }
 
+    func setSinglePressDistanceMode(_ mode: SinglePressDistanceMode) {
+        guard mode != singlePressDistanceMode else { return }
+        singlePressDistanceMode = mode
+        defaults.set(mode.rawValue, forKey: singlePressDistanceModeKey)
+        notifyChanged()
+    }
+
     func setSingleClickDuration(_ value: TimeInterval) {
         let clamped = Self.clamp(value, to: RemappingDefaults.easeDurationRange)
         guard clamped != singleClickDuration else { return }
@@ -282,6 +304,7 @@ final class RemappingSettings {
             back: RemappingDefaults.backButtonNumber,
             forward: RemappingDefaults.forwardButtonNumber
         )
+        setSinglePressDistanceMode(RemappingDefaults.singlePressDistanceMode)
         setSinglePressDistance(RemappingDefaults.singlePressDistance)
         setSingleClickDuration(RemappingDefaults.singleClickDuration)
         setInitialDelay(RemappingDefaults.initialDelay)
@@ -351,9 +374,114 @@ private func clearDeltas(in event: CGEvent, axis: (integer: CGEventField, fixedP
     event.setIntegerValueField(axis.point, value: 0)
 }
 
+private enum PageScrollDistanceResolver {
+    private static let accessibilityTimeout: Float = 0.05
+    private static let maximumPageDistance = 10_000.0
+    private static let scrollAreaRoles = [
+        kAXScrollAreaRole as String,
+        "AXWebArea",
+    ]
+
+    static func distance(at point: CGPoint) -> Double {
+        if let height = scrollAreaOrWindowHeight(at: point) {
+            return normalized(height)
+        }
+
+        return normalized(displayHeight(at: point))
+    }
+
+    private static func scrollAreaOrWindowHeight(at point: CGPoint) -> CGFloat? {
+        let systemWideElement = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(systemWideElement, accessibilityTimeout)
+
+        var hitElement: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(
+            systemWideElement,
+            Float(point.x),
+            Float(point.y),
+            &hitElement
+        ) == .success, var currentElement = hitElement else {
+            return nil
+        }
+        AXUIElementSetMessagingTimeout(currentElement, accessibilityTimeout)
+
+        var windowHeight: CGFloat?
+        for _ in 0..<12 {
+            if let role = stringAttribute(kAXRoleAttribute as CFString, of: currentElement) {
+                if scrollAreaRoles.contains(role),
+                   let scrollAreaSize = size(of: currentElement),
+                   scrollAreaSize.height > 0 {
+                    return scrollAreaSize.height
+                }
+                if role == kAXWindowRole as String,
+                   let windowSize = size(of: currentElement),
+                   windowSize.height > 0 {
+                    windowHeight = windowSize.height
+                }
+            }
+
+            guard let parent = elementAttribute(kAXParentAttribute as CFString, of: currentElement) else {
+                break
+            }
+            currentElement = parent
+        }
+
+        return windowHeight
+    }
+
+    private static func displayHeight(at point: CGPoint) -> CGFloat {
+        var displayID = CGMainDisplayID()
+        var displayCount: UInt32 = 0
+        if CGGetDisplaysWithPoint(point, 1, &displayID, &displayCount) == .success,
+           displayCount > 0 {
+            return CGDisplayBounds(displayID).height
+        }
+        return CGDisplayBounds(CGMainDisplayID()).height
+    }
+
+    private static func stringAttribute(_ attribute: CFString, of element: AXUIElement) -> String? {
+        attributeValue(attribute, of: element) as? String
+    }
+
+    private static func elementAttribute(_ attribute: CFString, of element: AXUIElement) -> AXUIElement? {
+        guard let value = attributeValue(attribute, of: element),
+              CFGetTypeID(value) == AXUIElementGetTypeID() else {
+            return nil
+        }
+        return unsafeBitCast(value, to: AXUIElement.self)
+    }
+
+    private static func size(of element: AXUIElement) -> CGSize? {
+        guard let value = attributeValue(kAXSizeAttribute as CFString, of: element),
+              CFGetTypeID(value) == AXValueGetTypeID() else {
+            return nil
+        }
+
+        var size = CGSize.zero
+        let axValue = unsafeBitCast(value, to: AXValue.self)
+        guard AXValueGetValue(axValue, .cgSize, &size) else {
+            return nil
+        }
+        return size
+    }
+
+    private static func attributeValue(_ attribute: CFString, of element: AXUIElement) -> CFTypeRef? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success else {
+            return nil
+        }
+        return value
+    }
+
+    private static func normalized(_ height: CGFloat) -> Double {
+        min(max(Double(height), RemappingDefaults.singlePressDistanceRange.lowerBound), maximumPageDistance)
+    }
+}
+
 private enum ButtonScrollPhase: Equatable {
     case idle
     case waitingForHold
+    case waitingForPageDistance
     case holding
     case releasingHold
     case animatingClick
@@ -365,6 +493,7 @@ private final class EventTapController {
     private var activeScrollTimer: Timer?
     private var buttonScrollPhase = ButtonScrollPhase.idle
     private var activeScrollDirection: Int32 = 0
+    private var activeSinglePressDistanceMode = SinglePressDistanceMode.fixed
     private var activeSinglePressDistance = 0.0
     private var activeSingleClickUsesEasing = false
     private var activeSingleClickDuration: TimeInterval = 0
@@ -378,6 +507,7 @@ private final class EventTapController {
     private var clickAnimationElapsedDuration: TimeInterval = 0
     private var lastAnimatedDistance = 0.0
     private var fractionalPointCarry = 0.0
+    private var scrollRequestID = 0
     private var settingsObserver: NSObjectProtocol?
     private let settings: RemappingSettings
 
@@ -436,7 +566,11 @@ private final class EventTapController {
             }
 
             let buttonNumber = event.getIntegerValueField(.mouseEventButtonNumber)
-            startButtonScroll(direction: scrollDirection, buttonNumber: buttonNumber)
+            startButtonScroll(
+                direction: scrollDirection,
+                buttonNumber: buttonNumber,
+                pointerLocation: event.location
+            )
             return nil
 
         case .otherMouseUp:
@@ -527,11 +661,28 @@ private final class EventTapController {
         }
     }
 
-    private func startButtonScroll(direction: Int32, buttonNumber: Int64) {
+    private func startButtonScroll(
+        direction: Int32,
+        buttonNumber: Int64,
+        pointerLocation: CGPoint
+    ) {
         stopButtonScroll()
         activeScrollButtonNumber = buttonNumber
         activeScrollDirection = direction
-        activeSinglePressDistance = settings.singlePressDistance
+        activeSinglePressDistanceMode = settings.singlePressDistanceMode
+        switch activeSinglePressDistanceMode {
+        case .fixed:
+            activeSinglePressDistance = settings.singlePressDistance
+        case .page:
+            activeSinglePressDistance = 0
+            let requestID = scrollRequestID
+            DispatchQueue.global(qos: .userInitiated).async {
+                let distance = PageScrollDistanceResolver.distance(at: pointerLocation)
+                DispatchQueue.main.async { [weak self] in
+                    self?.completePageDistance(distance, requestID: requestID)
+                }
+            }
+        }
         activeSingleClickUsesEasing = settings.singleClickEasingEnabled
         activeSingleClickDuration = settings.singleClickDuration
         activeScrollPointsPerSecond = SmoothButtonScroll.holdSpeedReferenceDistance / settings.interval
@@ -584,6 +735,27 @@ private final class EventTapController {
         activeScrollTimer = nil
         activeScrollButtonNumber = nil
 
+        guard activeSinglePressDistance > 0 else {
+            buttonScrollPhase = .waitingForPageDistance
+            return
+        }
+
+        beginSingleClickScroll()
+    }
+
+    private func completePageDistance(_ distance: Double, requestID: Int) {
+        guard requestID == scrollRequestID,
+              activeSinglePressDistanceMode == .page else {
+            return
+        }
+
+        activeSinglePressDistance = distance
+        if buttonScrollPhase == .waitingForPageDistance {
+            beginSingleClickScroll()
+        }
+    }
+
+    private func beginSingleClickScroll() {
         guard activeSingleClickUsesEasing else {
             postVerticalScroll(
                 direction: activeScrollDirection,
@@ -620,17 +792,19 @@ private final class EventTapController {
             buttonScrollPhase = .releasingHold
             phaseStartTimestamp = timestamp
 
-        case .idle, .releasingHold, .animatingClick:
+        case .idle, .waitingForPageDistance, .releasingHold, .animatingClick:
             stopButtonScroll()
         }
     }
 
     private func stopButtonScroll() {
+        scrollRequestID &+= 1
         activeScrollTimer?.invalidate()
         activeScrollTimer = nil
         activeScrollButtonNumber = nil
         buttonScrollPhase = .idle
         activeScrollDirection = 0
+        activeSinglePressDistanceMode = .fixed
         activeSinglePressDistance = 0
         activeSingleClickUsesEasing = false
         activeSingleClickDuration = 0
@@ -686,7 +860,7 @@ private final class EventTapController {
                 stopButtonScroll()
             }
 
-        case .idle, .waitingForHold:
+        case .idle, .waitingForHold, .waitingForPageDistance:
             break
         }
     }
@@ -857,6 +1031,7 @@ private final class PreferencesWindowController: NSWindowController, NSWindowDel
     private let thumbButtonsEnabledCheckbox = NSButton()
     private let backButtonPopUp = NSPopUpButton()
     private let forwardButtonPopUp = NSPopUpButton()
+    private let singlePressDistanceModePopUp = NSPopUpButton()
     private let singlePressDistanceSlider = NSSlider()
     private let singlePressDistanceValueLabel = NSTextField(labelWithString: "")
     private let singleClickEasingCheckbox = NSButton()
@@ -946,11 +1121,16 @@ private final class PreferencesWindowController: NSWindowController, NSWindowDel
         forwardButtonPopUp.action = #selector(forwardButtonNumberChanged)
         forwardButtonPopUp.widthAnchor.constraint(equalToConstant: 120).isActive = true
 
+        singlePressDistanceModePopUp.addItems(withTitles: ["Fixed", "One page"])
+        singlePressDistanceModePopUp.target = self
+        singlePressDistanceModePopUp.action = #selector(singlePressDistanceModeChanged)
+        singlePressDistanceModePopUp.widthAnchor.constraint(equalToConstant: 120).isActive = true
+
         singlePressDistanceSlider.minValue = RemappingDefaults.singlePressDistanceRange.lowerBound
         singlePressDistanceSlider.maxValue = RemappingDefaults.singlePressDistanceRange.upperBound
         singlePressDistanceSlider.target = self
         singlePressDistanceSlider.action = #selector(singlePressDistanceSliderChanged)
-        singlePressDistanceSlider.widthAnchor.constraint(equalToConstant: 220).isActive = true
+        singlePressDistanceSlider.widthAnchor.constraint(equalToConstant: 130).isActive = true
 
         singleClickDurationSlider.minValue = RemappingDefaults.easeDurationRange.lowerBound
         singleClickDurationSlider.maxValue = RemappingDefaults.easeDurationRange.upperBound
@@ -1030,10 +1210,7 @@ private final class PreferencesWindowController: NSWindowController, NSWindowDel
                 makeFormRow(label: "", control: makeSubsectionHeading("Single click")),
                 makeFormRow(
                     label: "Distance:",
-                    control: makeSliderRow(
-                        slider: singlePressDistanceSlider,
-                        valueLabel: singlePressDistanceValueLabel
-                    )
+                    control: makeSinglePressDistanceRow()
                 ),
                 makeFormRow(label: "Easing:", control: singleClickEasingCheckbox),
                 makeFormRow(
@@ -1151,6 +1328,20 @@ private final class PreferencesWindowController: NSWindowController, NSWindowDel
         return sliderRow
     }
 
+    private func makeSinglePressDistanceRow() -> NSStackView {
+        let distanceRow = NSStackView(
+            views: [
+                singlePressDistanceModePopUp,
+                singlePressDistanceSlider,
+                singlePressDistanceValueLabel,
+            ]
+        )
+        distanceRow.orientation = .horizontal
+        distanceRow.alignment = .centerY
+        distanceRow.spacing = 8
+        return distanceRow
+    }
+
     private func refreshControls() {
         thumbwheelEnabledCheckbox.state = settings.thumbwheelRemappingEnabled ? .on : .off
         directionPopUp.selectItem(at: settings.verticalScrollDirection < 0 ? 1 : 0)
@@ -1158,6 +1349,9 @@ private final class PreferencesWindowController: NSWindowController, NSWindowDel
         thumbButtonsEnabledCheckbox.state = settings.thumbButtonRemappingEnabled ? .on : .off
         backButtonPopUp.selectItem(at: Int(settings.backButtonNumber))
         forwardButtonPopUp.selectItem(at: Int(settings.forwardButtonNumber))
+        singlePressDistanceModePopUp.selectItem(
+            at: Int(settings.singlePressDistanceMode.rawValue)
+        )
         singlePressDistanceSlider.doubleValue = settings.singlePressDistance
         singleClickEasingCheckbox.state = settings.singleClickEasingEnabled ? .on : .off
         singleClickDurationSlider.doubleValue = settings.singleClickDuration
@@ -1183,7 +1377,12 @@ private final class PreferencesWindowController: NSWindowController, NSWindowDel
         lineBasedCheckbox.isEnabled = settings.thumbwheelRemappingEnabled
         backButtonPopUp.isEnabled = settings.thumbButtonRemappingEnabled
         forwardButtonPopUp.isEnabled = settings.thumbButtonRemappingEnabled
-        singlePressDistanceSlider.isEnabled = settings.thumbButtonRemappingEnabled
+        singlePressDistanceModePopUp.isEnabled = settings.thumbButtonRemappingEnabled
+        singlePressDistanceSlider.isEnabled =
+            settings.thumbButtonRemappingEnabled
+                && settings.singlePressDistanceMode == .fixed
+        singlePressDistanceSlider.isHidden = settings.singlePressDistanceMode == .page
+        singlePressDistanceValueLabel.isHidden = settings.singlePressDistanceMode == .page
         singleClickEasingCheckbox.isEnabled = settings.thumbButtonRemappingEnabled
         singleClickDurationSlider.isEnabled =
             settings.thumbButtonRemappingEnabled && settings.singleClickEasingEnabled
@@ -1250,6 +1449,16 @@ private final class PreferencesWindowController: NSWindowController, NSWindowDel
 
     @objc private func singlePressDistanceSliderChanged() {
         settings.setSinglePressDistance(singlePressDistanceSlider.doubleValue)
+        refreshControls()
+    }
+
+    @objc private func singlePressDistanceModeChanged() {
+        guard let mode = SinglePressDistanceMode(
+            rawValue: Int64(singlePressDistanceModePopUp.indexOfSelectedItem)
+        ) else {
+            return
+        }
+        settings.setSinglePressDistanceMode(mode)
         refreshControls()
     }
 
