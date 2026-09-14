@@ -1,30 +1,28 @@
 # Thumbwheel Remapper
 
-This small native macOS utility uses a Quartz `CGEvent` tap to customize the
-Logitech MX Master:
+Thumbwheel Remapper is a native macOS menu-bar utility that remaps mouse
+gestures through a Quartz event tap. It has no third-party runtime
+dependencies and targets macOS Tahoe 26 or newer.
 
-- The thumbwheel's pure horizontal scroll becomes vertical scroll.
-- The Forward thumb button produces repeated vertical scroll-up events while
-  held down (a single event on a quick click).
-- The Back thumb button produces repeated vertical scroll-down events while
-  held down (a single event on a quick click).
+The default configuration is intentionally small:
 
-It runs as a menu-bar (status item) app, with a native settings window for
-configuring each remapping behavior; it has no third-party runtime
-dependencies.
+- horizontal thumbwheel movement becomes vertical scrolling;
+- Back (`other` button 3) single-clicks scroll down;
+- Forward (`other` button 4) single-clicks scroll up;
+- double-click and hold mappings are available, but disabled by default.
+
+See [PRODUCT.md](PRODUCT.md) for the architecture and product decisions.
 
 ## Requirements
 
-- macOS 10.13 or newer
-- Swift command-line tools (`swiftc`) for building from source
-- A Logitech MX Master, or another device that emits compatible events
-- Accessibility permission for Thumbwheel Remapper
+- macOS Tahoe 26 or newer;
+- Swift command-line tools (`swift`, `swiftc`) for source builds;
+- a mouse that exposes compatible Quartz events;
+- Accessibility permission for the installed app.
 
 ## Build, install, and run
 
-The recommended workflow is to build an installable app bundle:
-
-From this directory:
+The signed app-bundle workflow is unchanged:
 
 ```sh
 make setup-signing
@@ -32,157 +30,154 @@ make install
 open "$HOME/Applications/Thumbwheel Remapper.app"
 ```
 
-`make setup-signing` is a one-time step that creates a local code-signing
-certificate in your login keychain. Reusing this identity prevents macOS from
-treating every rebuild as a different app and forgetting its Accessibility
-permission. The certificate is valid only on your Mac and is intended for
+`make setup-signing` creates a local **Thumbwheel Remapper Local Signing**
+certificate in the login keychain. Reusing it keeps macOS Accessibility
+permission attached to the app across rebuilds. The certificate is for
 personal builds, not distribution.
 
-This installs the app in `~/Applications`, so no administrator password is
-needed. To install it in `/Applications`, use:
-
-```sh
-INSTALL_DIR=/Applications make install
-```
-
-The app runs in the background with a ⇕ menu-bar icon. Use its **Quit** item to
-stop remapping. To build without installing:
+To build without installing:
 
 ```sh
 make app
 open "build/Thumbwheel Remapper.app"
 ```
 
-The build script uses the local **Thumbwheel Remapper Local Signing**
-certificate. Apps intended for distribution to other Macs should instead be
-signed with a Developer ID certificate and notarized by Apple.
+The bundle script builds the Swift Package Manager executable target, copies
+it into the existing bundle layout, generates the app icon, and signs the
+bundle. To install somewhere else:
 
-The app needs Accessibility permission because the event tap observes, changes,
-suppresses, and synthesizes system-wide input events. On first launch, it offers
-to open **System Settings > Privacy & Security > Accessibility**. Enable
-**Thumbwheel Remapper**, then launch the app again. On older macOS versions, use
-**System Preferences > Security & Privacy > Privacy > Accessibility**.
+```sh
+INSTALL_DIR=/Applications make install
+```
 
-## Behavior
+The first launch may ask to open **System Settings > Privacy & Security >
+Accessibility**. Enable **Thumbwheel Remapper**, then launch it again. Older
+macOS releases use **System Preferences > Security & Privacy > Privacy >
+Accessibility**.
 
-- Only pure horizontal thumbwheel events (axis 2 with no axis 1 movement) are
-  remapped. Vertical, diagonal, and unrelated scroll events are unchanged.
-- Integer, fixed-point, and point delta fields are transferred so the original
-  thumbwheel scroll representation is retained.
-- Holding Shift bypasses thumbwheel remapping, preserving native horizontal
-  scrolling.
-- Forward and Back `otherMouseDown` events are suppressed and replaced by a
-  vertical pixel scroll. Releasing before the long-press delay runs the
-  independently configured single-click animation. Holding beyond the delay
-  starts continuous display-paced scrolling without first adding a click
-  jump. Long-press speed and easing are configured separately. Matching
-  `otherMouseUp` events are also suppressed; releasing a different button than
-  the one held has no effect.
-- The event tap automatically re-enables itself after macOS disables it because
-  of a timeout or user-input request.
+## Architecture
 
-## Menu-bar settings UI
+The package has three targets:
 
-The app shows a mouse-shaped icon with its side thumbwheel highlighted in the
-menu bar and as its app icon. Its menu has:
+```text
+ThumbwheelRemapperCore       Foundation-only library
+ThumbwheelRemapper            SwiftUI/AppKit/ApplicationServices executable
+ThumbwheelRemapperCoreTests   Focused deterministic unit tests
+```
 
-- **Preferences…** — opens a settings window with:
-  - **Remapping** under **Thumbwheel** — turns horizontal-to-vertical
-    thumbwheel conversion on or off without quitting the app.
-  - **Vertical direction** — keeps or reverses the thumbwheel's resulting
-    vertical scroll direction.
-  - **Input filtering** — keeps pixel-based trackpad gestures from being
-    mistaken for the mouse's thumbwheel. Turn it off if a particular
-    mouse/connection reports its thumbwheel as continuous.
-  - **Remapping** under **Thumb buttons** — independently turns thumb-button
-    scrolling on or off.
-  - **Back button** and **Forward button** — choose the zero-based Quartz
-    button numbers used by the connected mouse. The two values must be
-    different.
-  - **Single click** can use a fixed distance or scroll one page. Fixed distance
-    ranges from 5–1,000 pt (default 40 pt). One page uses the visible scroll
-    area under the pointer, falling back to the containing window or display.
-    Easing and animation duration apply to either mode; duration ranges from
-    0.05–1.00 s (default 0.18 s). Its easing reaches scrolling speed quickly,
-    then uses most of the duration to decelerate smoothly.
-  - **Press and hold** has independent start-delay, speed, and easing controls.
-    **Time to full speed** controls acceleration, while **Glide after release**
-    controls deceleration. Both range from 0.05–1.00 s.
-  - **Joystick mode** is enabled by default and makes press-and-hold speed
-    respond to mouse movement while locking and hiding the pointer. The
-    configured speed is neutral; moving in the active scroll direction
-    accelerates up to 3×, while moving against it enters a broad paused zone
-    before reversing up to 2×. A small HUD shows the active direction, paused
-    zone, and speed.
-  - **Middle button** can optionally activate joystick mode immediately from
-    its paused center. Moving up scrolls in one direction and moving down
-    scrolls in the other; releasing the wheel button exits joystick mode. When
-    enabled, the app consumes the middle click instead of passing it through.
-  - **Restore Defaults** resets every setting.
-  - Behavior toggles apply immediately; button assignments and repeat timing
-    apply on the next button press. Everything is saved right away, with no
-    separate Save step.
-- **Quit** — exits the app.
+The core owns the versioned Codable configuration document, mapping models,
+validation, gesture timing, animation and momentum engines, joystick math,
+wheel transforms, Quartz-shaped event normalization, and routing decisions.
+The executable uses the SwiftUI app lifecycle for its `MenuBarExtra`. The
+mappings window uses AppKit's canonical `NSSplitViewController` sidebar and
+toolbar, with SwiftUI-hosted sidebar rows and forms. AppKit and
+ApplicationServices also remain responsible for the event tap lifecycle,
+timers, synthetic scroll output, cursor lock/hide, joystick HUD, and
+page-distance lookup.
 
-All values are persisted via `UserDefaults` (the standard macOS preferences
-mechanism) so they are restored the next time the app launches. Numeric values
-are clamped to safe ranges, and invalid duplicate button assignments are
-rejected.
+The persisted document is stored as JSON data under the new key
+`ThumbwheelRemapper.Configuration.v1`. There is no migration from the
+previous scalar preference keys. Missing, malformed, unsupported, invalid, or
+failed writes are logged; the explicit default document is used when needed.
 
-## Configuration
+## Mapping manager
 
-Use **Preferences…** from the menu-bar icon to change the remapping direction,
-continuous-event filtering, Back/Forward button numbers, repeat timing, or to
-temporarily disable either remapping behavior.
+Choose **Mappings…** from the status-item menu. The native preferences window
+supports:
 
-The button mapping applies to `otherMouseDown` and `otherMouseUp` events. It
-generates a scroll event on button-down and then repeats at the configured
-delay/interval (see "Menu-bar settings UI" above) for as long as the button is
-held, stopping on the matching button-up.
+- a list of click, hold, and wheel mappings;
+- add, remove, and contextual edit actions;
+- independent single and double click mappings;
+- hold mappings with three peer modes: **Scroll up**, **Scroll down**, and
+  **Joystick**; fixed-direction modes continuously scroll, while joystick mode
+  uses pointer movement to scroll in either direction, with independent
+  vertical and horizontal axis toggles;
+- button selection for other mouse buttons only. The primary left and right
+  buttons are intentionally not remappable because intercepting them can
+  interfere with normal macOS interaction;
+- common Quartz button numbers are shown as **Middle button (2)**, **Back
+  button (3)**, and **Forward button (4)**; device-specific values appear as
+  **Extra button N**;
+- disabled button choices that are already used by the selected gesture;
+- inline duplicate and parameter validation;
+- immediate save, **Restore Defaults**, and help text.
 
-## Troubleshooting and caveats
+Changes are persisted as soon as they are valid. Invalid edits remain visible
+for correction and are never activated.
 
-- **`Could not create the event tap`:** grant Accessibility permission to the
-  terminal or executable, then restart the process.
-- **Thumbwheel does nothing:** confirm the process is still running and that
-  thumbwheel remapping is enabled. Turn off **Input filtering** if the
-  thumbwheel is reported as continuous.
-- **Thumb buttons still navigate:** verify that the buttons arrive as
-  `otherMouseDown`/`otherMouseUp` events and that
-  the configured Back/Forward button numbers match the values reported by that
-  device and connection mode. USB, Bluetooth, Logitech Unifying, and Logitech
-  Bolt connections can expose different button numbers.
-- **The button numbers are not visible to this utility:** temporarily inspect
-  the mouse events with an event-monitoring tool, or use the button-number
-  conventions reported by your remapping utility, then update the values in
-  **Preferences…**.
-- **Logi Options+ assigned a keyboard shortcut:** the buttons may arrive as
-  keyboard events instead of mouse events. This utility intentionally handles
-  mouse button events only; assign the buttons as native mouse buttons if
-  possible.
-- **Scrolling is backwards:** choose **Reverse scroll direction** in
-  **Preferences…**.
-- **Horizontal scrolling no longer works with Shift:** verify that the
-  thumbwheel event reaches macOS as a scroll-wheel event and that another input
-  utility is not intercepting it.
+### Gesture timing
 
-macOS does not expose a universal device identifier in this event tap, so the
-continuous-scroll filter is only a heuristic for distinguishing the physical
-thumbwheel from trackpad gestures. The button-number configuration is likewise
-device/connection dependent.
+If a button has no double-click mapping, its single mapping fires immediately;
+it is not delayed by the system double-click interval. If a double mapping is
+present, the first press waits for `NSEvent.doubleClickInterval` so a second
+press can be recognized. Hold mappings use an independent hold delay and can
+coexist with single or double mappings.
+
+### Wheel behavior
+
+By default, only pure horizontal, non-continuous wheel events are transformed.
+The horizontal deltas are copied to the vertical axis, including integer,
+fixed-point, and point representations; horizontal fields are cleared. Shift
+scrolling and diagonal/vertical events remain native. The input-shape and
+continuous filters are part of the wheel action options.
+
+### Scroll engines
+
+Discrete click animations are deterministic and sampleable. Hold scrolling is display-paced. The fixed-direction modes continuously scroll
+up or down and release into deterministic momentum. Joystick mode starts
+centered, lets vertical and horizontal scrolling be enabled independently, uses
+pointer movement to scroll in either direction on each enabled axis, and
+releases without a cursor-lock jump.
+
+The event router consumes only mapped gestures. Unmapped left, right, other,
+pointer, wheel, and unrelated events are forwarded. Event-tap timeout and
+user-input re-enable handling is isolated from routing.
+
+## Development checks
+
+Run the focused core tests:
+
+```sh
+swift test --filter ThumbwheelRemapperCoreTests
+```
+
+Build the signed bundle:
+
+```sh
+./scripts/build-app.sh
+```
+
+The test suite covers defaults, duplicate validation, persistence failures,
+gesture timing, routing and tap re-enable, wheel shape/continuous filtering,
+discrete animation, joystick zero-start math, continuous scrolling, and
+momentum.
+
+## Troubleshooting
+
+- **Could not create the event tap:** grant Accessibility permission to the
+  installed app and restart it. Quit competing input-remapping utilities if
+  the permission is already enabled.
+- **Thumbwheel does nothing:** confirm that a horizontal thumbwheel mapping is
+  present. If the device reports continuous events, edit its wheel action or
+  disable the continuous-event filter.
+- **Buttons still navigate:** verify that the device reports
+  `otherMouseDown`/`otherMouseUp` and select the correct button number.
+  Connection modes can expose different Quartz button numbers.
+- **Scrolling is backwards:** edit the mapping direction in **Mappings…**.
+- **Keyboard shortcut assignments do nothing:** keyboard triggers are
+  deliberately deferred; see the follow-up issue for that scope.
 
 ## Launch at login
 
-For a personal installation, add **Thumbwheel Remapper** to
-**System Settings > General > Login Items**. This is preferable to a
-`launchd` entry because macOS keeps the app's Accessibility permission tied to
-the installed app bundle.
+For a personal installation, add **Thumbwheel Remapper** to **System Settings
+> General > Login Items**. This keeps Accessibility permission tied to the
+installed app bundle.
 
 ## Optional launchd LaunchAgent
 
-If you prefer a `launchd` configuration, create
-`~/Library/LaunchAgents/com.example.thumbwheel-remapper.plist` with the paths
-adjusted for your account and point it at the installed app executable:
+If a launchd entry is preferred, create
+`~/Library/LaunchAgents/com.example.thumbwheel-remapper.plist` with paths
+adjusted for the account:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -201,9 +196,9 @@ adjusted for your account and point it at the installed app executable:
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>/tmp/thumbwheel-remapper.log</string>
+  <string>/Users/you/Library/Logs/thumbwheel-remapper.log</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/thumbwheel-remapper.err</string>
+  <string>/Users/you/Library/Logs/thumbwheel-remapper.err</string>
 </dict>
 </plist>
 ```
