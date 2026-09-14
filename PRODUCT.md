@@ -50,7 +50,8 @@ The executable target contains the macOS platform layer:
 - display/accessibility page-distance lookup;
 - timers for gesture deadlines, animation frames, hold scrolling, and momentum;
 - synthetic pixel scroll events;
-- a SwiftUI `MenuBarExtra` and scene-managed native mapping window.
+- a SwiftUI `MenuBarExtra` and an AppKit `NSSplitViewController` mapping
+  window with SwiftUI-hosted sidebar and detail content.
 
 The SwiftUI mappings window edits the core document directly. It provides a
 mapping list, add/remove actions, contextual editing, button capture, disabled

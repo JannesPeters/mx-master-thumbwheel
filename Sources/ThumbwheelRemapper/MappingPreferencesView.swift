@@ -3,7 +3,7 @@ import Combine
 import SwiftUI
 import ThumbwheelRemapperCore
 
-private enum ModernMappingKind: String, CaseIterable, Identifiable {
+enum ModernMappingKind: String, CaseIterable, Identifiable {
     case click
     case hold
     case wheel
@@ -19,14 +19,14 @@ private enum ModernMappingKind: String, CaseIterable, Identifiable {
     }
 }
 
-private enum ModernMappingSelection: Hashable {
+enum ModernMappingSelection: Hashable {
     case click(UUID)
     case hold(UUID)
     case wheel(UUID)
     case about
 }
 
-private struct ModernMappingItem: Identifiable {
+struct ModernMappingItem: Identifiable {
     let id: String
     let selection: ModernMappingSelection
     let title: String
@@ -35,7 +35,7 @@ private struct ModernMappingItem: Identifiable {
 }
 
 @MainActor
-private final class ModernMappingPreferencesModel: ObservableObject {
+final class ModernMappingPreferencesModel: ObservableObject {
     @Published var document: ConfigurationDocument
     @Published var selection: ModernMappingSelection?
     @Published var newMappingKind: ModernMappingKind = .click
@@ -263,75 +263,56 @@ private final class ModernMappingPreferencesModel: ObservableObject {
     }
 }
 
-struct MappingPreferencesView: View {
-    @StateObject private var model: ModernMappingPreferencesModel
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
-
-    init(
-        document: ConfigurationDocument,
-        onChange: @escaping (ConfigurationDocument, [MappingValidationIssue]) -> Void
-    ) {
-        _model = StateObject(
-            wrappedValue: ModernMappingPreferencesModel(document: document, onChange: onChange)
-        )
-    }
+struct MappingSidebarView: View {
+    @ObservedObject var model: ModernMappingPreferencesModel
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            List(selection: $model.selection) {
-                Section {
-                    ForEach(model.items) { item in
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.title)
-                                Text(item.detail)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: item.symbolName)
-                                .frame(width: 20)
+        List(selection: $model.selection) {
+            Section {
+                ForEach(model.items) { item in
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.title)
+                            Text(item.detail)
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        .tag(item.selection)
+                    } icon: {
+                        Image(systemName: item.symbolName)
+                            .frame(width: 20)
+                            .foregroundStyle(.secondary)
                     }
-                }
-                Section {
-                    Label("About", systemImage: "info.circle")
-                        .tag(ModernMappingSelection.about)
+                    .tag(item.selection)
                 }
             }
-            .listStyle(.sidebar)
-            .navigationTitle("Mappings")
-            .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 300)
-        } detail: {
-            detailView
-                .navigationTitle(model.selectedTitle)
-                .toolbar {
-                    if model.selection != .about {
-                        ToolbarItem(placement: .primaryAction) {
-                            Menu {
-                                ForEach(ModernMappingKind.allCases) { kind in
-                                    Button(kind.title) {
-                                        model.newMappingKind = kind
-                                        model.addMapping()
-                                    }
-                                }
-                            } label: {
-                                Label("Add Mapping", systemImage: "plus")
-                            }
-                        }
-                        ToolbarItem(placement: .primaryAction) {
-                            Button("Remove", systemImage: "trash", role: .destructive) {
-                                model.removeSelection()
-                            }
-                            .disabled(model.selection == nil)
-                        }
-                    }
-                }
+            Section {
+                Label("About", systemImage: "info.circle")
+                    .tag(ModernMappingSelection.about)
+            }
         }
-        .navigationSplitViewStyle(.prominentDetail)
-        .frame(minWidth: 900, minHeight: 650)
+        .listStyle(.sidebar)
+    }
+}
+
+struct MappingDetailView: View {
+    @ObservedObject var model: ModernMappingPreferencesModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(model.selectedTitle)
+                    .font(.title2.weight(.semibold))
+                Spacer()
+            }
+            .padding(.horizontal, 28)
+            .padding(.vertical, 18)
+
+            Divider()
+
+            detailView
+        }
+        .frame(minWidth: 600, minHeight: 620)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     @ViewBuilder
@@ -358,6 +339,7 @@ struct MappingPreferencesView: View {
                                     .foregroundStyle(.red)
                             }
                         }
+
                     }
                     .formStyle(.grouped)
                     .padding(24)

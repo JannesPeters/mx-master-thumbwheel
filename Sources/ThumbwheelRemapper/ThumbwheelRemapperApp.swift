@@ -85,20 +85,30 @@ final class RemapperRuntime {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let runtime = RemapperRuntime()
+    private var mappingsWindow: MappingPreferencesWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         runtime.start()
     }
+
+    func showMappings() {
+        if mappingsWindow == nil {
+            mappingsWindow = MappingPreferencesWindowController(
+                document: runtime.document,
+                onChange: runtime.update
+            )
+        }
+        mappingsWindow?.show()
+    }
 }
 
 private struct StatusMenu: View {
-    @Environment(\.openWindow) private var openWindow
+    let showMappings: () -> Void
 
     var body: some View {
         Button("Mappings…") {
-            openWindow(id: "mappings")
-            NSApp.activate(ignoringOtherApps: true)
+            showMappings()
         }
         .keyboardShortcut(",")
 
@@ -117,21 +127,10 @@ struct ThumbwheelRemapperApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            StatusMenu()
+            StatusMenu(showMappings: appDelegate.showMappings)
         } label: {
             Image(nsImage: makeStatusItemImage())
         }
         .menuBarExtraStyle(.menu)
-
-        Window("Thumbwheel Remapper", id: "mappings") {
-            MappingPreferencesView(
-                document: appDelegate.runtime.document,
-                onChange: appDelegate.runtime.update
-            )
-        }
-        .defaultSize(width: 980, height: 700)
-        .defaultLaunchBehavior(.suppressed)
-        .windowStyle(.hiddenTitleBar)
-        .windowToolbarStyle(.unifiedCompact)
     }
 }
