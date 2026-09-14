@@ -3,6 +3,17 @@ import Combine
 import SwiftUI
 import ThumbwheelRemapperCore
 
+private final class FullWindowHostingView<Content: View>: NSHostingView<Content> {
+    override var safeAreaInsets: NSEdgeInsets { NSEdgeInsets() }
+    override var safeAreaRect: NSRect { bounds }
+}
+
+private final class FullWindowHostingController<Content: View>: NSHostingController<Content> {
+    override func loadView() {
+        view = FullWindowHostingView(rootView: rootView)
+    }
+}
+
 private enum ModernMappingKind: String, CaseIterable, Identifiable {
     case click
     case hold
@@ -659,7 +670,7 @@ final class ModernMappingPreferencesWindowController: NSWindowController {
         window.minSize = NSSize(width: 860, height: 620)
         window.isReleasedWhenClosed = false
         window.center()
-        window.contentViewController = NSHostingController(
+        window.contentViewController = FullWindowHostingController(
             rootView: ModernMappingPreferencesView(document: document, onChange: onChange)
         )
         super.init(window: window)
