@@ -295,35 +295,23 @@ private struct ModernMappingPreferencesView: View {
             }
             .listStyle(.sidebar)
             .navigationTitle("Mappings")
-            .toolbar {
-                ToolbarItem(placement: .navigation) {
-                    Button {
-                        withAnimation {
-                            columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
-                        }
-                    } label: {
-                        Image(systemName: "sidebar.leading")
-                    }
-                    .help("Show or hide the sidebar")
-                    .accessibilityLabel("Show or hide sidebar")
-                }
-                ToolbarItemGroup(placement: .primaryAction) {
-                    Picker("Add", selection: $model.newMappingKind) {
-                        ForEach(ModernMappingKind.allCases) { kind in
-                            Text(kind.title).tag(kind)
-                        }
-                    }
-                    .labelsHidden()
-                    Button("Add", systemImage: "plus") {
-                        model.addMapping()
-                    }
-                }
-            }
             .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 300)
         } detail: {
             detailView
                 .navigationTitle(model.selectedTitle)
                 .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        Menu {
+                            ForEach(ModernMappingKind.allCases) { kind in
+                                Button(kind.title) {
+                                    model.newMappingKind = kind
+                                    model.addMapping()
+                                }
+                            }
+                        } label: {
+                            Label("Add Mapping", systemImage: "plus")
+                        }
+                    }
                     ToolbarItem(placement: .primaryAction) {
                         Button("Remove", systemImage: "trash", role: .destructive) {
                             model.removeSelection()
