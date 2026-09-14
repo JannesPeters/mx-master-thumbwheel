@@ -30,6 +30,7 @@ private struct ModernMappingItem: Identifiable {
     let selection: ModernMappingSelection
     let title: String
     let detail: String
+    let symbolName: String
 }
 
 @MainActor
@@ -70,21 +71,24 @@ private final class ModernMappingPreferencesModel: ObservableObject {
                 id: "click-\($0.id.uuidString)",
                 selection: .click($0.id),
                 title: "\($0.button.displayName) \($0.click.displayName)",
-                detail: "\($0.action.direction.displayName) · \($0.label.isEmpty ? "Scroll" : $0.label)"
+                detail: "\($0.action.direction.displayName) · \($0.label.isEmpty ? "Scroll" : $0.label)",
+                symbolName: "computermouse"
             )
         } + document.buttonHolds.map {
             ModernMappingItem(
                 id: "hold-\($0.id.uuidString)",
                 selection: .hold($0.id),
                 title: "\($0.button.displayName) Hold",
-                detail: "\($0.action.direction.displayName) · \($0.label.isEmpty ? "Continuous scroll" : $0.label)"
+                detail: "\($0.action.direction.displayName) · \($0.label.isEmpty ? "Continuous scroll" : $0.label)",
+                symbolName: "hand.point.up.left"
             )
         } + document.wheelMappings.map {
             ModernMappingItem(
                 id: "wheel-\($0.id.uuidString)",
                 selection: .wheel($0.id),
                 title: $0.label.isEmpty ? $0.source.displayName : $0.label,
-                detail: "Wheel · \($0.action.direction.displayName)"
+                detail: "Wheel · \($0.action.direction.displayName)",
+                symbolName: "scroll"
             )
         }
     }
@@ -270,21 +274,25 @@ private struct ModernMappingPreferencesView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $model.selection) {
-                Section("Mappings") {
+                Section {
                     ForEach(model.items) { item in
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(item.title)
-                                .font(.headline)
-                            Text(item.detail)
-                                .font(.subheadline)
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.title)
+                                Text(item.detail)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: item.symbolName)
+                                .frame(width: 20)
                                 .foregroundStyle(.secondary)
                         }
-                        .padding(.vertical, 5)
                         .tag(item.selection)
                     }
                 }
             }
-            .listStyle(.inset)
+            .listStyle(.sidebar)
             .navigationTitle("Mappings")
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
@@ -299,7 +307,7 @@ private struct ModernMappingPreferencesView: View {
                     }
                 }
             }
-            .navigationSplitViewColumnWidth(min: 250, ideal: 300, max: 360)
+            .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 300)
         } detail: {
             detailView
                 .navigationTitle(model.selectedTitle)
@@ -312,7 +320,7 @@ private struct ModernMappingPreferencesView: View {
                     }
                 }
         }
-        .navigationSplitViewStyle(.balanced)
+        .navigationSplitViewStyle(.prominentDetail)
         .safeAreaInset(edge: .bottom) {
             footer
         }
