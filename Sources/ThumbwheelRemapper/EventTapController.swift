@@ -19,17 +19,20 @@ final class EventTapController {
     private var clickStartedAt: TimeInterval?
     private var clickLastElapsed: TimeInterval = 0
     private var fractionalPointCarry = 0.0
+    private var fractionalHorizontalPointCarry = 0.0
 
     private var activeButton: InputButton?
     private var activeHold: ButtonHoldMapping?
     private var holdStartedAt: TimeInterval?
     private var holdLastFrameAt: TimeInterval?
-    private var holdVelocity = 0.0
-    private var momentumEngine = DragScrollMomentumEngine()
-    private var momentumDirection: ScrollDirection = .up
-    private var joystickDisplacement = JoystickDisplacement1D()
-    private var joystickPointer = 0.0
-    private var joystickSpeed = 1.0
+    private var holdVerticalVelocity = 0.0
+    private var holdHorizontalVelocity = 0.0
+    private var verticalMomentumEngine = DragScrollMomentumEngine()
+    private var horizontalMomentumEngine = DragScrollMomentumEngine()
+    private var joystickDisplacement = JoystickDisplacement2D()
+    private var joystickPointer = Point2D.zero
+    private var joystickVerticalSpeed = 0.0
+    private var joystickHorizontalSpeed = 0.0
     private var isCursorLocked = false
     private var hiddenCursorDisplayID: CGDirectDisplayID?
 
@@ -186,17 +189,23 @@ final class EventTapController {
 
     private func processPointerMotion(_ event: CGEvent) -> Unmanaged<CGEvent>? {
         guard let activeHold,
-              activeHold.action.joystickEnabled else {
+              activeHold.action.mode == .joystick else {
             return Unmanaged.passUnretained(event)
         }
 
-        joystickPointer -= event.getDoubleValueField(.mouseEventDeltaY)
+        joystickPointer.x += event.getDoubleValueField(.mouseEventDeltaX)
+        joystickPointer.y -= event.getDoubleValueField(.mouseEventDeltaY)
         let displacement = joystickDisplacement.update(pointer: joystickPointer)
-        joystickSpeed = joystickProfile.multiplier(
-            for: displacement,
-            direction: activeHold.action.direction == .up ? 1 : -1
+        joystickVerticalSpeed = activeHold.action.joystickVerticalEnabled
+            ? joystickProfile.multiplier(for: displacement.y, centeredMode: true)
+            : 0
+        joystickHorizontalSpeed = activeHold.action.joystickHorizontalEnabled
+            ? joystickProfile.multiplier(for: displacement.x, centeredMode: true)
+            : 0
+        joystickHUD.update(
+            verticalSpeedMultiplier: joystickVerticalSpeed,
+            horizontalSpeedMultiplier: joystickHorizontalSpeed
         )
-        joystickHUD.update(speedMultiplier: joystickSpeed)
         return nil
     }
 
@@ -274,6 +283,7 @@ final class EventTapController {
         clickTimer = nil
         clickRequestID &+= 1
         fractionalPointCarry = 0
+        fractionalHorizontalPointCarry = 0
         clickDirection = options.direction
 
         let requestID = clickRequestID
@@ -316,8 +326,8 @@ final class EventTapController {
         clickStartedAt = ProcessInfo.processInfo.systemUptime
         clickLastElapsed = 0
 
-        guard options.duration > 0 else {
-            postAccumulatedScroll(points: signedDistance)
+        guard options.easingEnabled, options.duration > 0 else {
+            postAccumulatedScroll(vertical: signedDistance)
             flushAccumulatedScroll()
             clickAnimation = nil
             clickStartedAt = nil
@@ -339,7 +349,7 @@ final class EventTapController {
             return
         }
         let elapsed = ProcessInfo.processInfo.systemUptime - startedAt
-        postAccumulatedScroll(points: animation.delta(from: clickLastElapsed, to: elapsed))
+        postAccumulatedScroll(vertical: animation.delta(from: clickLastElapsed, to: elapsed))
         clickLastElapsed = elapsed
         if elapsed >= animation.duration {
             flushAccumulatedScroll()
@@ -356,20 +366,22 @@ final class EventTapController {
         activeHold = mapping
         holdStartedAt = ProcessInfo.processInfo.systemUptime
         holdLastFrameAt = holdStartedAt
-        holdVelocity = 0
+        holdVerticalVelocity = 0
+        holdHorizontalVelocity = 0
         joystickDisplacement.reset()
-        joystickPointer = 0
-        joystickSpeed = 1
-        momentumEngine = DragScrollMomentumEngine(
+        joystickPointer = .zero
+        joystickVerticalSpeed = 0
+        joystickHorizontalSpeed = 0
+        verticalMomentumEngine = DragScrollMomentumEngine(
+            friction: 1 / max(mapping.action.releaseDuration, 0.01)
+        )
+        horizontalMomentumEngine = DragScrollMomentumEngine(
             friction: 1 / max(mapping.action.releaseDuration, 0.01)
         )
 
-        if mapping.action.joystickEnabled {
+        if mapping.action.mode == .joystick {
             lockCursor()
-            joystickHUD.show(
-                at: NSEvent.mouseLocation,
-                direction: mapping.action.direction
-            )
+            joystickHUD.show(at: NSEvent.mouseLocation)
         }
 
         holdTimer?.invalidate()
@@ -385,10 +397,14 @@ final class EventTapController {
         activeHold = nil
         unlockCursor()
         joystickHUD.hide()
-        if released, abs(holdVelocity) > 0.01, mapping.action.releaseDuration > 0 {
-            momentumEngine.setVelocity(holdVelocity)
-            momentumEngine.release()
-            momentumDirection = mapping.action.direction
+        if released,
+           mapping.action.easingEnabled,
+           max(abs(holdVerticalVelocity), abs(holdHorizontalVelocity)) > 0.01,
+           mapping.action.releaseDuration > 0 {
+            verticalMomentumEngine.setVelocity(holdVerticalVelocity)
+            horizontalMomentumEngine.setVelocity(holdHorizontalVelocity)
+            verticalMomentumEngine.release()
+            horizontalMomentumEngine.release()
         } else {
             holdTimer?.invalidate()
             holdTimer = nil
@@ -418,11 +434,31 @@ final class EventTapController {
         let progress = accelerationDuration > 0
             ? min(max((now - (holdStartedAt ?? now)) / accelerationDuration, 0), 1)
             : 1
-        let acceleration = EasingCurve.smoothStep.value(at: progress)
-        let multiplier = mapping.action.joystickEnabled ? joystickSpeed : 1
-        holdVelocity = mapping.action.pointsPerSecond * acceleration * multiplier
+        let acceleration = mapping.action.easingEnabled
+            ? EasingCurve.smoothStep.value(at: progress)
+            : 1
+        let verticalMultiplier: Double
+        let horizontalMultiplier: Double
+        switch mapping.action.mode {
+        case .scrollUp:
+            verticalMultiplier = 1
+            horizontalMultiplier = 0
+        case .scrollDown:
+            verticalMultiplier = -1
+            horizontalMultiplier = 0
+        case .joystick:
+            verticalMultiplier = mapping.action.joystickVerticalEnabled
+                ? joystickVerticalSpeed
+                : 0
+            horizontalMultiplier = mapping.action.joystickHorizontalEnabled
+                ? joystickHorizontalSpeed
+                : 0
+        }
+        holdVerticalVelocity = mapping.action.pointsPerSecond * acceleration * verticalMultiplier
+        holdHorizontalVelocity = mapping.action.pointsPerSecond * acceleration * horizontalMultiplier
         postAccumulatedScroll(
-            points: holdVelocity * deltaTime * Double(mapping.action.direction.rawValue)
+            vertical: holdVerticalVelocity * deltaTime,
+            horizontal: holdHorizontalVelocity * deltaTime
         )
     }
 
@@ -430,40 +466,51 @@ final class EventTapController {
         let now = ProcessInfo.processInfo.systemUptime
         let deltaTime = min(max(now - (holdLastFrameAt ?? now), 0), 1.0 / 30.0)
         holdLastFrameAt = now
-        let distance = momentumEngine.advance(deltaTime: deltaTime)
+        let verticalDistance = verticalMomentumEngine.advance(deltaTime: deltaTime)
+        let horizontalDistance = horizontalMomentumEngine.advance(deltaTime: deltaTime)
         postAccumulatedScroll(
-            points: distance * Double(momentumDirection.rawValue)
+            vertical: verticalDistance,
+            horizontal: horizontalDistance
         )
-        if momentumEngine.velocity == 0 {
+        if verticalMomentumEngine.velocity == 0,
+           horizontalMomentumEngine.velocity == 0 {
             holdTimer?.invalidate()
             holdTimer = nil
             holdLastFrameAt = nil
         }
     }
 
-    private func postAccumulatedScroll(points: Double) {
-        fractionalPointCarry += points
-        let wholePoints = Int32(fractionalPointCarry.rounded(.towardZero))
-        guard wholePoints != 0 else { return }
-        fractionalPointCarry -= Double(wholePoints)
-        postVerticalScroll(points: wholePoints)
+    private func postAccumulatedScroll(
+        vertical: Double = 0,
+        horizontal: Double = 0
+    ) {
+        fractionalPointCarry += vertical
+        fractionalHorizontalPointCarry += horizontal
+        let verticalPoints = Int32(fractionalPointCarry.rounded(.towardZero))
+        let horizontalPoints = Int32(fractionalHorizontalPointCarry.rounded(.towardZero))
+        guard verticalPoints != 0 || horizontalPoints != 0 else { return }
+        fractionalPointCarry -= Double(verticalPoints)
+        fractionalHorizontalPointCarry -= Double(horizontalPoints)
+        postScroll(vertical: verticalPoints, horizontal: horizontalPoints)
     }
 
     private func flushAccumulatedScroll() {
-        let remaining = Int32(fractionalPointCarry.rounded())
-        guard remaining != 0 else { return }
+        let verticalRemaining = Int32(fractionalPointCarry.rounded())
+        let horizontalRemaining = Int32(fractionalHorizontalPointCarry.rounded())
+        guard verticalRemaining != 0 || horizontalRemaining != 0 else { return }
         fractionalPointCarry = 0
-        postVerticalScroll(points: remaining)
+        fractionalHorizontalPointCarry = 0
+        postScroll(vertical: verticalRemaining, horizontal: horizontalRemaining)
     }
 
-    private func postVerticalScroll(points: Int32) {
-        guard points != 0,
+    private func postScroll(vertical: Int32, horizontal: Int32) {
+        guard vertical != 0 || horizontal != 0,
               let event = CGEvent(
                 scrollWheelEvent2Source: nil,
                 units: .pixel,
                 wheelCount: 1,
-                wheel1: points,
-                wheel2: 0,
+                wheel1: vertical,
+                wheel2: horizontal,
                 wheel3: 0
               ) else {
             return

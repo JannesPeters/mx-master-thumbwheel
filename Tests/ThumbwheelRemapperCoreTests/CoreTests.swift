@@ -15,6 +15,35 @@ final class ConfigurationTests: XCTestCase {
         XCTAssertEqual(defaults.wheelMappings.first?.source, .horizontalThumbwheel)
     }
 
+    func testButtonNamesDescribeCommonQuartzButtons() {
+        XCTAssertEqual(InputButton.other(2).displayName, "Middle button (2)")
+        XCTAssertEqual(InputButton.other(3).displayName, "Back button (3)")
+        XCTAssertEqual(InputButton.other(4).displayName, "Forward button (4)")
+        XCTAssertEqual(InputButton.other(9).displayName, "Extra button 9")
+    }
+
+    func testHoldModesArePeerOptions() {
+        XCTAssertEqual(HoldScrollMode.allCases, [.scrollUp, .scrollDown, .joystick])
+        XCTAssertEqual(HoldScrollMode.scrollUp.direction, .up)
+        XCTAssertEqual(HoldScrollMode.scrollDown.direction, .down)
+        XCTAssertNil(HoldScrollMode.joystick.direction)
+    }
+
+    func testJoystickAxesDefaultToVerticalOnlyAndRoundTrip() throws {
+        let defaults = HoldActionOptions(mode: .joystick)
+        XCTAssertTrue(defaults.joystickVerticalEnabled)
+        XCTAssertFalse(defaults.joystickHorizontalEnabled)
+
+        let configured = HoldActionOptions(
+            mode: .joystick,
+            joystickVerticalEnabled: false,
+            joystickHorizontalEnabled: true
+        )
+        let data = try JSONEncoder().encode(configured)
+        let decoded = try JSONDecoder().decode(HoldActionOptions.self, from: data)
+        XCTAssertEqual(decoded, configured)
+    }
+
     func testDuplicateValidationAllowsIndependentClickKindsButRejectsSameGesture() {
         var document = ConfigurationDocument.defaults
         document.buttonClicks.append(
@@ -50,7 +79,7 @@ final class ConfigurationTests: XCTestCase {
                         buttonHolds: [
                             ButtonHoldMapping(
                                 button: .right,
-                                action: HoldActionOptions(direction: .down)
+                                action: HoldActionOptions(mode: .scrollDown)
                             )
                         ],
                         wheelMappings: []
@@ -89,6 +118,43 @@ final class ConfigurationTests: XCTestCase {
 
         XCTAssertFalse(store.save(.defaults))
         XCTAssertTrue(messages.contains { $0.contains("could not save") })
+    }
+
+    func testOlderActionDocumentsDefaultToEnabledEasing() throws {
+        let decoder = JSONDecoder()
+        let click = try decoder.decode(
+            ScrollActionOptions.self,
+            from: Data(
+                """
+                {
+                  "direction": 1,
+                  "amount": { "kind": "fixed", "points": 40 },
+                  "duration": 0.18,
+                  "easing": "quickInLongOut"
+                }
+                """.utf8
+            )
+        )
+        let hold = try decoder.decode(
+            HoldActionOptions.self,
+            from: Data(
+                """
+                {
+                  "direction": 1,
+                  "pointsPerSecond": 800,
+                  "accelerationDuration": 0.18,
+                  "releaseDuration": 0.14,
+                  "joystickEnabled": true
+                }
+                """.utf8
+            )
+        )
+
+        XCTAssertTrue(click.easingEnabled)
+        XCTAssertTrue(hold.easingEnabled)
+        XCTAssertEqual(hold.mode, .joystick)
+        XCTAssertTrue(hold.joystickVerticalEnabled)
+        XCTAssertFalse(hold.joystickHorizontalEnabled)
     }
 }
 
@@ -273,6 +339,9 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(profile.multiplier(for: -100), 0)
         XCTAssertGreaterThan(profile.multiplier(for: 300), 1)
         XCTAssertLessThan(profile.multiplier(for: -300), 0)
+        XCTAssertEqual(profile.multiplier(for: 0, centeredMode: true), 0)
+        XCTAssertGreaterThan(profile.multiplier(for: 300, centeredMode: true), 0)
+        XCTAssertLessThan(profile.multiplier(for: -300, centeredMode: true), 0)
     }
 }
 

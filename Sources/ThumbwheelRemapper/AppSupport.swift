@@ -96,15 +96,15 @@ final class PageDistanceResolver {
 }
 
 private final class JoystickHUDView: NSView {
-    var direction: ScrollDirection = .up
-    var speedMultiplier = 0.0
+    var verticalSpeedMultiplier = 0.0
+    var horizontalSpeedMultiplier = 0.0
 
     override var isFlipped: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
-        let center = NSPoint(x: bounds.midX, y: 55)
+        let center = NSPoint(x: bounds.midX, y: bounds.midY + 10)
         let dialRect = NSRect(x: center.x - 27, y: center.y - 27, width: 54, height: 54)
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow()
@@ -124,34 +124,52 @@ private final class JoystickHUDView: NSView {
         let track = NSBezierPath()
         track.move(to: NSPoint(x: center.x, y: center.y - 17))
         track.line(to: NSPoint(x: center.x, y: center.y + 17))
+        track.move(to: NSPoint(x: center.x - 17, y: center.y))
+        track.line(to: NSPoint(x: center.x + 17, y: center.y))
         track.lineWidth = 2
         NSColor.tertiaryLabelColor.setStroke()
         track.stroke()
 
-        let normalized = min(max(speedMultiplier / 3, -1), 1)
-        let knobPoint = NSPoint(x: center.x, y: center.y + (normalized * 17))
-        let color = speedMultiplier < -0.05 ? NSColor.systemOrange : NSColor.systemBlue
+        let normalizedVertical = min(max(verticalSpeedMultiplier / 3, -1), 1)
+        let normalizedHorizontal = min(max(horizontalSpeedMultiplier / 3, -1), 1)
+        let knobPoint = NSPoint(
+            x: center.x + (normalizedHorizontal * 17),
+            y: center.y + (normalizedVertical * 17)
+        )
+        let color = verticalSpeedMultiplier < -0.05 || horizontalSpeedMultiplier < -0.05
+            ? NSColor.systemOrange
+            : NSColor.systemBlue
         color.setFill()
         NSBezierPath(
             ovalIn: NSRect(x: knobPoint.x - 5, y: knobPoint.y - 5, width: 10, height: 10)
         ).fill()
 
-        let arrow = NSBezierPath()
-        let sign = direction == .up ? 1.0 : -1.0
-        let tip = center.y + (24 * sign)
-        arrow.move(to: NSPoint(x: center.x - 4, y: tip - (4 * sign)))
-        arrow.line(to: NSPoint(x: center.x, y: tip))
-        arrow.line(to: NSPoint(x: center.x + 4, y: tip - (4 * sign)))
-        arrow.lineWidth = 1.5
+        let arrows = [
+            (tip: NSPoint(x: center.x, y: center.y + 24), first: NSPoint(x: center.x - 4, y: center.y + 20), second: NSPoint(x: center.x + 4, y: center.y + 20)),
+            (tip: NSPoint(x: center.x, y: center.y - 24), first: NSPoint(x: center.x - 4, y: center.y - 20), second: NSPoint(x: center.x + 4, y: center.y - 20)),
+            (tip: NSPoint(x: center.x + 24, y: center.y), first: NSPoint(x: center.x + 20, y: center.y - 4), second: NSPoint(x: center.x + 20, y: center.y + 4)),
+            (tip: NSPoint(x: center.x - 24, y: center.y), first: NSPoint(x: center.x - 20, y: center.y - 4), second: NSPoint(x: center.x - 20, y: center.y + 4)),
+        ]
         color.setStroke()
-        arrow.stroke()
+        for arrow in arrows {
+            let path = NSBezierPath()
+            path.move(to: arrow.first)
+            path.line(to: arrow.tip)
+            path.line(to: arrow.second)
+            path.lineWidth = 1.5
+            path.stroke()
+        }
 
-        let text = abs(speedMultiplier) < 0.05
+        let text = max(abs(verticalSpeedMultiplier), abs(horizontalSpeedMultiplier)) < 0.05
             ? "Paused"
-            : String(format: "%.1f×", speedMultiplier)
+            : String(
+                format: "V %.1f×  H %.1f×",
+                verticalSpeedMultiplier,
+                horizontalSpeedMultiplier
+            )
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedDigitSystemFont(
-                ofSize: NSFont.smallSystemFontSize,
+                ofSize: 9,
                 weight: .semibold
             ),
             .foregroundColor: NSColor.labelColor,
@@ -167,7 +185,7 @@ private final class JoystickHUDView: NSView {
 final class JoystickHUDController {
     private let panel: NSPanel
     private let view: JoystickHUDView
-    private let size = NSSize(width: 78, height: 94)
+    private let size = NSSize(width: 112, height: 106)
 
     init() {
         view = JoystickHUDView(frame: NSRect(origin: .zero, size: size))
@@ -186,15 +204,19 @@ final class JoystickHUDController {
         panel.contentView = view
     }
 
-    func show(at point: NSPoint, direction: ScrollDirection) {
-        view.direction = direction
-        view.speedMultiplier = 1
+    func show(at point: NSPoint) {
+        view.verticalSpeedMultiplier = 0
+        view.horizontalSpeedMultiplier = 0
         updatePosition(around: point)
         panel.orderFrontRegardless()
     }
 
-    func update(speedMultiplier: Double) {
-        view.speedMultiplier = speedMultiplier
+    func update(
+        verticalSpeedMultiplier: Double,
+        horizontalSpeedMultiplier: Double
+    ) {
+        view.verticalSpeedMultiplier = verticalSpeedMultiplier
+        view.horizontalSpeedMultiplier = horizontalSpeedMultiplier
         view.needsDisplay = true
     }
 
@@ -203,7 +225,10 @@ final class JoystickHUDController {
     }
 
     private func updatePosition(around point: NSPoint) {
-        var origin = NSPoint(x: point.x - size.width / 2, y: point.y - 47)
+        var origin = NSPoint(
+            x: point.x - size.width / 2,
+            y: point.y - size.height / 2
+        )
         if let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }) {
             let frame = screen.visibleFrame.insetBy(dx: 8, dy: 8)
             origin.x = min(max(origin.x, frame.minX), frame.maxX - size.width)

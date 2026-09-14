@@ -88,11 +88,16 @@ supports:
 - a list of click, hold, and wheel mappings;
 - add, remove, and contextual edit actions;
 - independent single and double click mappings;
-- hold mappings with direction, speed, acceleration, release, and joystick
-  options;
-- button capture for other mouse buttons only. The primary left and right
+- hold mappings with three peer modes: **Scroll up**, **Scroll down**, and
+  **Joystick**; fixed-direction modes continuously scroll, while joystick mode
+  uses pointer movement to scroll in either direction, with independent
+  vertical and horizontal axis toggles;
+- button selection for other mouse buttons only. The primary left and right
   buttons are intentionally not remappable because intercepting them can
   interfere with normal macOS interaction;
+- common Quartz button numbers are shown as **Middle button (2)**, **Back
+  button (3)**, and **Forward button (4)**; device-specific values appear as
+  **Extra button N**;
 - disabled button choices that are already used by the selected gesture;
 - inline duplicate and parameter validation;
 - immediate save, **Restore Defaults**, and help text.
@@ -118,10 +123,11 @@ continuous filters are part of the wheel action options.
 
 ### Scroll engines
 
-Discrete click animations are deterministic and sampleable. Hold scrolling is
-display-paced, can use joystick speed control, and releases into deterministic
-momentum. Joystick displacement starts at zero for both one-dimensional and
-two-dimensional pointer math, preventing a cursor-lock jump.
+Discrete click animations are deterministic and sampleable. Hold scrolling is display-paced. The fixed-direction modes continuously scroll
+up or down and release into deterministic momentum. Joystick mode starts
+centered, lets vertical and horizontal scrolling be enabled independently, uses
+pointer movement to scroll in either direction on each enabled axis, and
+releases without a cursor-lock jump.
 
 The event router consumes only mapped gestures. Unmapped left, right, other,
 pointer, wheel, and unrelated events are forwarded. Event-tap timeout and
@@ -155,8 +161,8 @@ momentum.
   present. If the device reports continuous events, edit its wheel action or
   disable the continuous-event filter.
 - **Buttons still navigate:** verify that the device reports
-  `otherMouseDown`/`otherMouseUp` and capture the button again. Connection
-  modes can expose different Quartz button numbers.
+  `otherMouseDown`/`otherMouseUp` and select the correct button number.
+  Connection modes can expose different Quartz button numbers.
 - **Scrolling is backwards:** edit the mapping direction in **Mappings…**.
 - **Keyboard shortcut assignments do nothing:** keyboard triggers are
   deliberately deferred; see the follow-up issue for that scope.

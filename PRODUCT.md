@@ -27,7 +27,7 @@ The core owns:
 
 - Codable, Equatable, Identifiable mapping models:
   `ButtonClickMapping`, `ButtonHoldMapping`, and `WheelMapping`;
-- action option models for discrete, continuous, and wheel actions;
+- action option models for discrete, continuous, joystick, and wheel actions;
 - explicit default mappings and duplicate/parameter validation;
 - a versioned JSON configuration document and a new UserDefaults storage key;
 - deterministic click/double/hold timing;
@@ -54,7 +54,7 @@ The executable target contains the macOS platform layer:
   window with SwiftUI-hosted sidebar and detail content.
 
 The SwiftUI mappings window edits the core document directly. It provides a
-mapping list, add/remove actions, contextual editing, button capture, disabled
+mapping list, add/remove actions, contextual editing, button selection, disabled
 already-used choices, inline validation, immediate persistence, Restore
 Defaults, and help text. Invalid documents stay visible for correction but are
 never written or activated.
@@ -77,10 +77,14 @@ button or wheel event only when an active mapping matches it. Tap timeout and
 user-input disable callbacks are handled separately and re-enable the tap
 without changing routing decisions.
 
-Joystick displacement is zero-start: the first pointer sample establishes the
-anchor and produces no jump. Both 1D and 2D math are available in the core.
-Hold release uses deterministic momentum decay, while discrete clicks use a
-sampleable easing curve.
+Hold mappings have three peer modes: fixed continuous scrolling up, fixed
+continuous scrolling down, and a centered joystick. Joystick vertical and
+horizontal scrolling can be enabled independently, and each enabled axis
+scrolls in either direction from pointer movement. Joystick displacement is
+zero-start: the first pointer sample establishes the anchor and produces no
+jump. Both 1D and 2D math are available in the core. Hold release uses
+deterministic momentum decay, while discrete clicks use a sampleable easing
+curve.
 
 ## Build and compatibility
 

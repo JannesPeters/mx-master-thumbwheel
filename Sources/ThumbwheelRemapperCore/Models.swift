@@ -23,7 +23,16 @@ public enum InputButton: Codable, Equatable, Hashable, Identifiable {
         case .right:
             return "Right"
         case let .other(number):
-            return "Other \(number)"
+            switch number {
+            case 2:
+                return "Middle button (2)"
+            case 3:
+                return "Back button (3)"
+            case 4:
+                return "Forward button (4)"
+            default:
+                return "Extra button \(number)"
+            }
         }
     }
 
@@ -83,6 +92,36 @@ public enum ScrollDirection: Int, Codable, CaseIterable, Equatable {
             return "Scroll down"
         case .up:
             return "Scroll up"
+        }
+    }
+}
+
+public enum HoldScrollMode: String, Codable, CaseIterable, Equatable, Identifiable {
+    case scrollUp
+    case scrollDown
+    case joystick
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .scrollUp:
+            return "Scroll up"
+        case .scrollDown:
+            return "Scroll down"
+        case .joystick:
+            return "Joystick"
+        }
+    }
+
+    public var direction: ScrollDirection? {
+        switch self {
+        case .scrollUp:
+            return .up
+        case .scrollDown:
+            return .down
+        case .joystick:
+            return nil
         }
     }
 }
@@ -167,39 +206,155 @@ public struct ScrollActionOptions: Codable, Equatable {
     public var amount: ScrollAmount
     public var duration: TimeInterval
     public var easing: EasingCurve
+    public var easingEnabled: Bool
 
     public init(
         direction: ScrollDirection,
         amount: ScrollAmount = .fixed(40),
         duration: TimeInterval = 0.18,
-        easing: EasingCurve = .quickInLongOut
+        easing: EasingCurve = .quickInLongOut,
+        easingEnabled: Bool = true
     ) {
         self.direction = direction
         self.amount = amount
         self.duration = duration
         self.easing = easing
+        self.easingEnabled = easingEnabled
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case direction
+        case amount
+        case duration
+        case easing
+        case easingEnabled
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        direction = try container.decode(ScrollDirection.self, forKey: .direction)
+        amount = try container.decode(ScrollAmount.self, forKey: .amount)
+        duration = try container.decode(TimeInterval.self, forKey: .duration)
+        easing = try container.decodeIfPresent(EasingCurve.self, forKey: .easing) ?? .quickInLongOut
+        easingEnabled = try container.decodeIfPresent(Bool.self, forKey: .easingEnabled) ?? true
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(direction, forKey: .direction)
+        try container.encode(amount, forKey: .amount)
+        try container.encode(duration, forKey: .duration)
+        try container.encode(easing, forKey: .easing)
+        try container.encode(easingEnabled, forKey: .easingEnabled)
     }
 }
 
 public struct HoldActionOptions: Codable, Equatable {
-    public var direction: ScrollDirection
+    public var mode: HoldScrollMode
     public var pointsPerSecond: Double
     public var accelerationDuration: TimeInterval
     public var releaseDuration: TimeInterval
-    public var joystickEnabled: Bool
+    public var joystickVerticalEnabled: Bool
+    public var joystickHorizontalEnabled: Bool
+    public var easingEnabled: Bool
 
+    public init(
+        mode: HoldScrollMode = .scrollUp,
+        pointsPerSecond: Double = 800,
+        accelerationDuration: TimeInterval = 0.18,
+        releaseDuration: TimeInterval = 0.14,
+        joystickVerticalEnabled: Bool = true,
+        joystickHorizontalEnabled: Bool = false,
+        easingEnabled: Bool = true
+    ) {
+        self.mode = mode
+        self.pointsPerSecond = pointsPerSecond
+        self.accelerationDuration = accelerationDuration
+        self.releaseDuration = releaseDuration
+        self.joystickVerticalEnabled = joystickVerticalEnabled
+        self.joystickHorizontalEnabled = joystickHorizontalEnabled
+        self.easingEnabled = easingEnabled
+    }
+
+    @available(*, deprecated, message: "Use init(mode:pointsPerSecond:accelerationDuration:releaseDuration:easingEnabled:) instead.")
     public init(
         direction: ScrollDirection,
         pointsPerSecond: Double = 800,
         accelerationDuration: TimeInterval = 0.18,
         releaseDuration: TimeInterval = 0.14,
-        joystickEnabled: Bool = true
+        joystickEnabled: Bool = false,
+        easingEnabled: Bool = true
     ) {
-        self.direction = direction
-        self.pointsPerSecond = pointsPerSecond
-        self.accelerationDuration = accelerationDuration
-        self.releaseDuration = releaseDuration
-        self.joystickEnabled = joystickEnabled
+        self.init(
+            mode: joystickEnabled
+                ? .joystick
+                : direction == .up ? .scrollUp : .scrollDown,
+            pointsPerSecond: pointsPerSecond,
+            accelerationDuration: accelerationDuration,
+            releaseDuration: releaseDuration,
+            joystickVerticalEnabled: true,
+            joystickHorizontalEnabled: false,
+            easingEnabled: easingEnabled
+        )
+    }
+
+    @available(*, deprecated, message: "Use mode instead.")
+    public var direction: ScrollDirection {
+        get { mode.direction ?? .up }
+        set { mode = newValue == .up ? .scrollUp : .scrollDown }
+    }
+
+    @available(*, deprecated, message: "Use mode instead.")
+    public var joystickEnabled: Bool {
+        get { mode == .joystick }
+        set {
+            if newValue {
+                mode = .joystick
+            } else if mode == .joystick {
+                mode = .scrollUp
+            }
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case mode
+        case direction
+        case pointsPerSecond
+        case accelerationDuration
+        case releaseDuration
+        case joystickVerticalEnabled
+        case joystickHorizontalEnabled
+        case joystickEnabled
+        case easingEnabled
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacyDirection = try container.decodeIfPresent(ScrollDirection.self, forKey: .direction) ?? .up
+        let legacyJoystickEnabled = try container.decodeIfPresent(Bool.self, forKey: .joystickEnabled) ?? false
+        mode = try container.decodeIfPresent(HoldScrollMode.self, forKey: .mode)
+            ?? (legacyJoystickEnabled
+                ? .joystick
+                : legacyDirection == .up ? .scrollUp : .scrollDown)
+        pointsPerSecond = try container.decode(Double.self, forKey: .pointsPerSecond)
+        accelerationDuration = try container.decode(TimeInterval.self, forKey: .accelerationDuration)
+        releaseDuration = try container.decode(TimeInterval.self, forKey: .releaseDuration)
+        joystickVerticalEnabled = try container.decodeIfPresent(Bool.self, forKey: .joystickVerticalEnabled) ?? true
+        joystickHorizontalEnabled = try container.decodeIfPresent(Bool.self, forKey: .joystickHorizontalEnabled) ?? false
+        easingEnabled = try container.decodeIfPresent(Bool.self, forKey: .easingEnabled) ?? true
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(mode, forKey: .mode)
+        try container.encode(mode.direction ?? .up, forKey: .direction)
+        try container.encode(pointsPerSecond, forKey: .pointsPerSecond)
+        try container.encode(accelerationDuration, forKey: .accelerationDuration)
+        try container.encode(releaseDuration, forKey: .releaseDuration)
+        try container.encode(joystickVerticalEnabled, forKey: .joystickVerticalEnabled)
+        try container.encode(joystickHorizontalEnabled, forKey: .joystickHorizontalEnabled)
+        try container.encode(mode == .joystick, forKey: .joystickEnabled)
+        try container.encode(easingEnabled, forKey: .easingEnabled)
     }
 }
 

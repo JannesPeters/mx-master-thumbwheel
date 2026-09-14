@@ -1,4 +1,3 @@
-import AppKit
 import Combine
 import SwiftUI
 import ThumbwheelRemapperCore
@@ -40,10 +39,8 @@ final class ModernMappingPreferencesModel: ObservableObject {
     @Published var selection: ModernMappingSelection?
     @Published var newMappingKind: ModernMappingKind = .click
     @Published var validationMessage: String?
-    @Published private(set) var capturingButton = false
 
     private let onChange: (ConfigurationDocument, [MappingValidationIssue]) -> Void
-    private var captureMonitor: Any?
 
     init(
         document: ConfigurationDocument,
@@ -57,12 +54,6 @@ final class ModernMappingPreferencesModel: ObservableObject {
             selection = .hold(mapping.id)
         } else if let mapping = document.wheelMappings.first {
             selection = .wheel(mapping.id)
-        }
-    }
-
-    deinit {
-        if let captureMonitor {
-            NSEvent.removeMonitor(captureMonitor)
         }
     }
 
@@ -80,7 +71,7 @@ final class ModernMappingPreferencesModel: ObservableObject {
                 id: "hold-\($0.id.uuidString)",
                 selection: .hold($0.id),
                 title: "\($0.button.displayName) Hold",
-                detail: "\($0.action.direction.displayName) · \($0.label.isEmpty ? "Continuous scroll" : $0.label)",
+                detail: "\($0.action.mode.displayName) · \($0.label.isEmpty ? "Hold scroll" : $0.label)",
                 symbolName: "hand.point.up.left"
             )
         } + document.wheelMappings.map {
@@ -131,7 +122,7 @@ final class ModernMappingPreferencesModel: ObservableObject {
             }
             let mapping = ButtonHoldMapping(
                 button: button,
-                action: HoldActionOptions(direction: .up)
+                action: HoldActionOptions(mode: .scrollUp)
             )
             document.buttonHolds.append(mapping)
             selection = .hold(mapping.id)
@@ -211,45 +202,6 @@ final class ModernMappingPreferencesModel: ObservableObject {
         allButtons.filter { candidate in
             !document.buttonHolds.contains { $0.button == candidate }
         }
-    }
-
-    func toggleCapture() {
-        if let captureMonitor {
-            NSEvent.removeMonitor(captureMonitor)
-            self.captureMonitor = nil
-            capturingButton = false
-            return
-        }
-        capturingButton = true
-        captureMonitor = NSEvent.addGlobalMonitorForEvents(
-            matching: [.otherMouseDown]
-        ) { [weak self] event in
-            let button: InputButton
-            switch event.type {
-            case .otherMouseDown: button = .other(Int64(event.buttonNumber))
-            default: return
-            }
-            DispatchQueue.main.async {
-                guard let self, let selection = self.selection, case let .click(id) = selection else {
-                    guard let self, let selection = self.selection else { return }
-                    self.stopCapture()
-                    if case let .hold(id) = selection {
-                        self.updateHold(id) { $0.button = button }
-                    }
-                    return
-                }
-                self.stopCapture()
-                self.updateClick(id) { $0.button = button }
-            }
-        }
-    }
-
-    private func stopCapture() {
-        if let captureMonitor {
-            NSEvent.removeMonitor(captureMonitor)
-            self.captureMonitor = nil
-        }
-        capturingButton = false
     }
 
     private func commit() {
@@ -403,9 +355,6 @@ struct MappingDetailView: View {
                         Text($0.displayName).tag($0)
                     }
                 }
-                Button(model.capturingButton ? "Listening…" : "Capture button") {
-                    model.toggleCapture()
-                }
             }
             Section("Action") {
                 Picker("Direction", selection: clickDirectionBinding(id, value: mapping.action.direction)) {
@@ -413,14 +362,37 @@ struct MappingDetailView: View {
                         Text($0.displayName).tag($0)
                     }
                 }
+                Toggle(
+                    "Ease each click",
+                    isOn: clickEasingEnabledBinding(id, value: mapping.action.easingEnabled)
+                )
+                Picker("Easing curve", selection: clickEasingBinding(id, value: mapping.action.easing)) {
+                    ForEach(EasingCurve.allCases) {
+                        Text($0.displayName).tag($0)
+                    }
+                }
+                .disabled(!mapping.action.easingEnabled)
                 Picker("Amount", selection: clickAmountBinding(id, value: mapping.action.amount)) {
                     Text("Fixed points").tag(ModernScrollAmount.fixed)
                     Text("One page").tag(ModernScrollAmount.page)
                 }
                 if case .fixed = mapping.action.amount {
-                    TextField("Points", text: clickPointsBinding(id, value: mapping.action.amount))
+                    valueSlider(
+                        label: "Points",
+                        value: clickPointsBinding(id, value: mapping.action.amount),
+                        range: SliderRanges.scrollDistance,
+                        step: 5,
+                        format: { String(format: "%.0f pt", $0) }
+                    )
                 }
-                TextField("Duration (seconds)", text: clickDurationBinding(id, value: mapping.action.duration))
+                valueSlider(
+                    label: "Duration",
+                    value: clickDurationBinding(id, value: mapping.action.duration),
+                    range: SliderRanges.duration,
+                    step: 0.01,
+                    format: { String(format: "%.2f s", $0) }
+                )
+                .disabled(!mapping.action.easingEnabled)
             }
         }
     }
@@ -434,20 +406,59 @@ struct MappingDetailView: View {
                         Text($0.displayName).tag($0)
                     }
                 }
-                Button(model.capturingButton ? "Listening…" : "Capture button") {
-                    model.toggleCapture()
-                }
             }
             Section("Action") {
-                Picker("Direction", selection: holdDirectionBinding(id, value: mapping.action.direction)) {
-                    ForEach(ScrollDirection.allCases, id: \.rawValue) {
+                Picker("Mode", selection: holdModeBinding(id, value: mapping.action.mode)) {
+                    ForEach(HoldScrollMode.allCases) {
                         Text($0.displayName).tag($0)
                     }
                 }
-                TextField("Speed (points/second)", text: holdSpeedBinding(id, value: mapping.action.pointsPerSecond))
-                TextField("Acceleration (seconds)", text: holdAccelerationBinding(id, value: mapping.action.accelerationDuration))
-                TextField("Release (seconds)", text: holdReleaseBinding(id, value: mapping.action.releaseDuration))
-                Toggle("Use pointer movement as a joystick", isOn: holdJoystickBinding(id, value: mapping.action.joystickEnabled))
+                if mapping.action.mode == .joystick {
+                    Text("Move the pointer up or down while holding to scroll in either direction.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Toggle(
+                        "Vertical scrolling",
+                        isOn: holdJoystickVerticalBinding(
+                            id,
+                            value: mapping.action.joystickVerticalEnabled
+                        )
+                    )
+                    Toggle(
+                        "Horizontal scrolling",
+                        isOn: holdJoystickHorizontalBinding(
+                            id,
+                            value: mapping.action.joystickHorizontalEnabled
+                        )
+                    )
+                }
+                Toggle(
+                    "Ease acceleration and deceleration",
+                    isOn: holdEasingEnabledBinding(id, value: mapping.action.easingEnabled)
+                )
+                valueSlider(
+                    label: "Speed",
+                    value: holdSpeedBinding(id, value: mapping.action.pointsPerSecond),
+                    range: SliderRanges.holdSpeed,
+                    step: 10,
+                    format: { String(format: "%.0f pt/s", $0) }
+                )
+                valueSlider(
+                    label: "Acceleration",
+                    value: holdAccelerationBinding(id, value: mapping.action.accelerationDuration),
+                    range: SliderRanges.duration,
+                    step: 0.01,
+                    format: { String(format: "%.2f s", $0) }
+                )
+                .disabled(!mapping.action.easingEnabled)
+                valueSlider(
+                    label: "Deceleration",
+                    value: holdReleaseBinding(id, value: mapping.action.releaseDuration),
+                    range: SliderRanges.duration,
+                    step: 0.01,
+                    format: { String(format: "%.2f s", $0) }
+                )
+                .disabled(!mapping.action.easingEnabled)
             }
         }
     }
@@ -479,6 +490,31 @@ struct MappingDetailView: View {
         case page
     }
 
+    private enum SliderRanges {
+        static let scrollDistance = 5.0...1_000.0
+        static let duration = 0.0...1.0
+        static let holdSpeed = 80.0...4_000.0
+    }
+
+    private func valueSlider(
+        label: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        step: Double,
+        format: @escaping (Double) -> String
+    ) -> some View {
+        LabeledContent(label) {
+            HStack(spacing: 12) {
+                Slider(value: value, in: range, step: step)
+                    .accessibilityLabel(Text(label))
+                Text(format(value.wrappedValue))
+                    .font(.body.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 68, alignment: .trailing)
+            }
+        }
+    }
+
     private func clickButtonBinding(_ id: UUID, value: InputButton) -> Binding<InputButton> {
         Binding(
             get: { model.click(id)?.button ?? value },
@@ -497,6 +533,20 @@ struct MappingDetailView: View {
         Binding(
             get: { model.click(id)?.action.direction ?? value },
             set: { newValue in model.updateClick(id) { $0.action.direction = newValue } }
+        )
+    }
+
+    private func clickEasingBinding(_ id: UUID, value: EasingCurve) -> Binding<EasingCurve> {
+        Binding(
+            get: { model.click(id)?.action.easing ?? value },
+            set: { newValue in model.updateClick(id) { $0.action.easing = newValue } }
+        )
+    }
+
+    private func clickEasingEnabledBinding(_ id: UUID, value: Bool) -> Binding<Bool> {
+        Binding(
+            get: { model.click(id)?.action.easingEnabled ?? value },
+            set: { newValue in model.updateClick(id) { $0.action.easingEnabled = newValue } }
         )
     }
 
@@ -521,24 +571,27 @@ struct MappingDetailView: View {
         )
     }
 
-    private func clickPointsBinding(_ id: UUID, value: ScrollAmount) -> Binding<String> {
+    private func clickPointsBinding(_ id: UUID, value: ScrollAmount) -> Binding<Double> {
         Binding(
             get: {
-                guard case let .fixed(points) = model.click(id)?.action.amount ?? value else { return "" }
-                return String(format: "%.2f", points)
+                guard case let .fixed(points) = model.click(id)?.action.amount ?? value else { return 40 }
+                return points
             },
             set: { newValue in
-                guard let points = Double(newValue), points > 0 else { return }
-                model.updateClick(id) { $0.action.amount = .fixed(points) }
+                guard newValue > 0 else { return }
+                model.updateClick(id) { $0.action.amount = .fixed(newValue) }
             }
         )
     }
 
-    private func clickDurationBinding(_ id: UUID, value: TimeInterval) -> Binding<String> {
-        numericBinding(get: { model.click(id)?.action.duration ?? value }) { newValue in
-            guard let duration = Double(newValue), duration >= 0 else { return }
-            model.updateClick(id) { $0.action.duration = duration }
-        }
+    private func clickDurationBinding(_ id: UUID, value: TimeInterval) -> Binding<Double> {
+        Binding(
+            get: { model.click(id)?.action.duration ?? value },
+            set: { newValue in
+                guard newValue >= 0 else { return }
+                model.updateClick(id) { $0.action.duration = newValue }
+            }
+        )
     }
 
     private func holdButtonBinding(_ id: UUID, value: InputButton) -> Binding<InputButton> {
@@ -548,38 +601,61 @@ struct MappingDetailView: View {
         )
     }
 
-    private func holdDirectionBinding(_ id: UUID, value: ScrollDirection) -> Binding<ScrollDirection> {
+    private func holdModeBinding(_ id: UUID, value: HoldScrollMode) -> Binding<HoldScrollMode> {
         Binding(
-            get: { model.hold(id)?.action.direction ?? value },
-            set: { newValue in model.updateHold(id) { $0.action.direction = newValue } }
+            get: { model.hold(id)?.action.mode ?? value },
+            set: { newValue in model.updateHold(id) { $0.action.mode = newValue } }
         )
     }
 
-    private func holdSpeedBinding(_ id: UUID, value: Double) -> Binding<String> {
-        numericBinding(get: { model.hold(id)?.action.pointsPerSecond ?? value }) { newValue in
-            guard let speed = Double(newValue), speed > 0 else { return }
-            model.updateHold(id) { $0.action.pointsPerSecond = speed }
-        }
-    }
-
-    private func holdAccelerationBinding(_ id: UUID, value: Double) -> Binding<String> {
-        numericBinding(get: { model.hold(id)?.action.accelerationDuration ?? value }) { newValue in
-            guard let duration = Double(newValue), duration >= 0 else { return }
-            model.updateHold(id) { $0.action.accelerationDuration = duration }
-        }
-    }
-
-    private func holdReleaseBinding(_ id: UUID, value: Double) -> Binding<String> {
-        numericBinding(get: { model.hold(id)?.action.releaseDuration ?? value }) { newValue in
-            guard let duration = Double(newValue), duration >= 0 else { return }
-            model.updateHold(id) { $0.action.releaseDuration = duration }
-        }
-    }
-
-    private func holdJoystickBinding(_ id: UUID, value: Bool) -> Binding<Bool> {
+    private func holdSpeedBinding(_ id: UUID, value: Double) -> Binding<Double> {
         Binding(
-            get: { model.hold(id)?.action.joystickEnabled ?? value },
-            set: { newValue in model.updateHold(id) { $0.action.joystickEnabled = newValue } }
+            get: { model.hold(id)?.action.pointsPerSecond ?? value },
+            set: { newValue in
+                guard newValue > 0 else { return }
+                model.updateHold(id) { $0.action.pointsPerSecond = newValue }
+            }
+        )
+    }
+
+    private func holdAccelerationBinding(_ id: UUID, value: Double) -> Binding<Double> {
+        Binding(
+            get: { model.hold(id)?.action.accelerationDuration ?? value },
+            set: { newValue in
+                guard newValue >= 0 else { return }
+                model.updateHold(id) { $0.action.accelerationDuration = newValue }
+            }
+        )
+    }
+
+    private func holdReleaseBinding(_ id: UUID, value: Double) -> Binding<Double> {
+        Binding(
+            get: { model.hold(id)?.action.releaseDuration ?? value },
+            set: { newValue in
+                guard newValue >= 0 else { return }
+                model.updateHold(id) { $0.action.releaseDuration = newValue }
+            }
+        )
+    }
+
+    private func holdEasingEnabledBinding(_ id: UUID, value: Bool) -> Binding<Bool> {
+        Binding(
+            get: { model.hold(id)?.action.easingEnabled ?? value },
+            set: { newValue in model.updateHold(id) { $0.action.easingEnabled = newValue } }
+        )
+    }
+
+    private func holdJoystickVerticalBinding(_ id: UUID, value: Bool) -> Binding<Bool> {
+        Binding(
+            get: { model.hold(id)?.action.joystickVerticalEnabled ?? value },
+            set: { newValue in model.updateHold(id) { $0.action.joystickVerticalEnabled = newValue } }
+        )
+    }
+
+    private func holdJoystickHorizontalBinding(_ id: UUID, value: Bool) -> Binding<Bool> {
+        Binding(
+            get: { model.hold(id)?.action.joystickHorizontalEnabled ?? value },
+            set: { newValue in model.updateHold(id) { $0.action.joystickHorizontalEnabled = newValue } }
         )
     }
 
@@ -611,13 +687,4 @@ struct MappingDetailView: View {
         )
     }
 
-    private func numericBinding(
-        get: @escaping () -> Double,
-        set: @escaping (String) -> Void
-    ) -> Binding<String> {
-        Binding(
-            get: { String(format: "%.2f", get()) },
-            set: set
-        )
-    }
 }
