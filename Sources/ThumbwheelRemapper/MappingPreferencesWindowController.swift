@@ -147,6 +147,10 @@ final class MappingPreferencesWindowController: NSWindowController,
         tableView.headerView = nil
         tableView.delegate = self
         tableView.dataSource = self
+        tableView.target = self
+        tableView.action = #selector(mappingTableClicked)
+        tableView.allowsMultipleSelection = false
+        tableView.allowsEmptySelection = false
         tableView.usesAlternatingRowBackgroundColors = true
         tableView.rowHeight = 58
         tableView.intercellSpacing = NSSize(width: 0, height: 1)
@@ -802,10 +806,20 @@ final class MappingPreferencesWindowController: NSWindowController,
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
-        let row = tableView.selectedRow
+        selectMapping(at: tableView.selectedRow)
+    }
+
+    @objc private func mappingTableClicked() {
+        selectMapping(at: tableView.clickedRow >= 0 ? tableView.clickedRow : tableView.selectedRow)
+    }
+
+    private func selectMapping(at row: Int) {
         guard row >= 0, row < items.count else { return }
         selectedKind = items[row].kind
         selectedID = items[row].id
+        if tableView.selectedRow != row {
+            tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        }
         refreshEditor()
     }
 
