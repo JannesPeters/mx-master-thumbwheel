@@ -289,30 +289,37 @@ private struct ModernMappingPreferencesView: View {
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            List(selection: $model.selection) {
-                Section {
-                    ForEach(model.items) { item in
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.title)
-                                Text(item.detail)
-                                    .font(.caption)
+            ZStack {
+                Rectangle()
+                    .fill(.thinMaterial)
+                    .ignoresSafeArea()
+
+                List(selection: $model.selection) {
+                    Section {
+                        ForEach(model.items) { item in
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.title)
+                                    Text(item.detail)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            } icon: {
+                                Image(systemName: item.symbolName)
+                                    .frame(width: 20)
                                     .foregroundStyle(.secondary)
                             }
-                        } icon: {
-                            Image(systemName: item.symbolName)
-                                .frame(width: 20)
-                                .foregroundStyle(.secondary)
+                            .tag(item.selection)
                         }
-                        .tag(item.selection)
+                    }
+                    Section {
+                        Label("About", systemImage: "info.circle")
+                            .tag(ModernMappingSelection.about)
                     }
                 }
-                Section {
-                    Label("About", systemImage: "info.circle")
-                        .tag(ModernMappingSelection.about)
-                }
+                .scrollContentBackground(.hidden)
+                .listStyle(.sidebar)
             }
-            .listStyle(.sidebar)
             .navigationTitle("Mappings")
             .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 300)
         } detail: {
@@ -667,6 +674,7 @@ final class ModernMappingPreferencesWindowController: NSWindowController {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.toolbarStyle = .unifiedCompact
+        window.titlebarSeparatorStyle = .none
         window.minSize = NSSize(width: 860, height: 620)
         window.isReleasedWhenClosed = false
         window.center()
