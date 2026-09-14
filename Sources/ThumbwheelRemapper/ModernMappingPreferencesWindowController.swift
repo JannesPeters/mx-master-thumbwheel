@@ -23,6 +23,7 @@ private enum ModernMappingSelection: Hashable {
     case click(UUID)
     case hold(UUID)
     case wheel(UUID)
+    case about
 }
 
 private struct ModernMappingItem: Identifiable {
@@ -99,6 +100,7 @@ private final class ModernMappingPreferencesModel: ObservableObject {
         case .click: return "Button click"
         case .hold: return "Button hold"
         case .wheel: return "Thumbwheel"
+        case .about: return "About"
         }
     }
 
@@ -154,6 +156,8 @@ private final class ModernMappingPreferencesModel: ObservableObject {
             document.buttonHolds.removeAll { $0.id == id }
         case let .wheel(id):
             document.wheelMappings.removeAll { $0.id == id }
+        case .about:
+            return
         }
         self.selection = items.first?.selection
         commit()
@@ -292,6 +296,10 @@ private struct ModernMappingPreferencesView: View {
                         .tag(item.selection)
                     }
                 }
+                Section {
+                    Label("About", systemImage: "info.circle")
+                        .tag(ModernMappingSelection.about)
+                }
             }
             .listStyle(.sidebar)
             .navigationTitle("Mappings")
@@ -300,57 +308,63 @@ private struct ModernMappingPreferencesView: View {
             detailView
                 .navigationTitle(model.selectedTitle)
                 .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
-                        Menu {
-                            ForEach(ModernMappingKind.allCases) { kind in
-                                Button(kind.title) {
-                                    model.newMappingKind = kind
-                                    model.addMapping()
+                    if model.selection != .about {
+                        ToolbarItem(placement: .primaryAction) {
+                            Menu {
+                                ForEach(ModernMappingKind.allCases) { kind in
+                                    Button(kind.title) {
+                                        model.newMappingKind = kind
+                                        model.addMapping()
+                                    }
                                 }
+                            } label: {
+                                Label("Add Mapping", systemImage: "plus")
                             }
-                        } label: {
-                            Label("Add Mapping", systemImage: "plus")
                         }
-                    }
-                    ToolbarItem(placement: .primaryAction) {
-                        Button("Remove", systemImage: "trash", role: .destructive) {
-                            model.removeSelection()
+                        ToolbarItem(placement: .primaryAction) {
+                            Button("Remove", systemImage: "trash", role: .destructive) {
+                                model.removeSelection()
+                            }
+                            .disabled(model.selection == nil)
                         }
-                        .disabled(model.selection == nil)
                     }
                 }
         }
         .navigationSplitViewStyle(.prominentDetail)
-        .safeAreaInset(edge: .bottom) {
-            footer
-        }
+        .ignoresSafeArea(.container, edges: .top)
         .frame(minWidth: 900, minHeight: 650)
     }
 
     @ViewBuilder
     private var detailView: some View {
         if let selection = model.selection {
-            ScrollView {
-                Form {
-                    switch selection {
-                    case let .click(id):
-                        clickEditor(id)
-                    case let .hold(id):
-                        holdEditor(id)
-                    case let .wheel(id):
-                        wheelEditor(id)
-                    }
-                    if let validationMessage = model.validationMessage {
-                        Section {
-                            Label(validationMessage, systemImage: "exclamationmark.triangle")
-                                .foregroundStyle(.red)
+            if case .about = selection {
+                aboutView
+            } else {
+                ScrollView {
+                    Form {
+                        switch selection {
+                        case let .click(id):
+                            clickEditor(id)
+                        case let .hold(id):
+                            holdEditor(id)
+                        case let .wheel(id):
+                            wheelEditor(id)
+                        case .about:
+                            EmptyView()
+                        }
+                        if let validationMessage = model.validationMessage {
+                            Section {
+                                Label(validationMessage, systemImage: "exclamationmark.triangle")
+                                    .foregroundStyle(.red)
+                            }
                         }
                     }
+                    .formStyle(.grouped)
+                    .padding(24)
+                    .frame(maxWidth: 700, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .center)
                 }
-                .formStyle(.grouped)
-                .padding(24)
-                .frame(maxWidth: 700, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .center)
             }
         } else {
             ContentUnavailableView(
@@ -359,6 +373,39 @@ private struct ModernMappingPreferencesView: View {
                 description: Text("Add a mapping or select one from the list.")
             )
         }
+    }
+
+    private var aboutView: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Thumbwheel Remapper", systemImage: "computermouse")
+                    .font(.title2.weight(.semibold))
+                Text("A native Tahoe utility for remapping thumbwheel and secondary mouse-button gestures.")
+                    .foregroundStyle(.secondary)
+            }
+
+            GroupBox("Configuration") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Changes save automatically. The primary left and right mouse buttons are intentionally not remappable.")
+                        .foregroundStyle(.secondary)
+                    Button("Restore Defaults") {
+                        model.restoreDefaults()
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            GroupBox("Version") {
+                Text(model.versionDescription)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Spacer()
+        }
+        .padding(32)
+        .frame(maxWidth: 620, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     @ViewBuilder
@@ -444,23 +491,6 @@ private struct ModernMappingPreferencesView: View {
                 Toggle("Preserve Shift horizontal scrolling", isOn: wheelShiftBinding(id, value: mapping.action.preserveShiftGestures))
             }
         }
-    }
-
-    private var footer: some View {
-        HStack(spacing: 12) {
-            Button("Restore Defaults") {
-                model.restoreDefaults()
-            }
-            Text("Changes save automatically.")
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(model.versionDescription)
-                .foregroundStyle(.tertiary)
-                .font(.footnote)
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 10)
-        .background(.bar)
     }
 
     private enum ModernScrollAmount: Hashable {
