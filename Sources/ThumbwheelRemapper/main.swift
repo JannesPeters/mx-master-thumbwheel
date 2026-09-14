@@ -8,7 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store: ConfigurationStore
     private var document: ConfigurationDocument
     private var statusItem: NSStatusItem?
-    private var mappingWindow: MappingPreferencesWindowController?
+    private var mappingWindow: ModernMappingPreferencesWindowController?
     private var eventTapController: EventTapController?
     private var eventTapRunLoopSource: CFRunLoopSource?
 
@@ -26,7 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showPreferences() {
         if mappingWindow == nil {
-            mappingWindow = MappingPreferencesWindowController(
+            mappingWindow = ModernMappingPreferencesWindowController(
                 document: document
             ) { [weak self] document, issues in
                 guard let self else { return }
