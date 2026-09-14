@@ -109,13 +109,13 @@ final class MappingPreferencesWindowController: NSWindowController,
         self.onChange = onChange
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 960, height: 620),
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 780),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Thumbwheel Remapper Mappings"
-        window.minSize = NSSize(width: 820, height: 520)
+        window.minSize = NSSize(width: 680, height: 640)
         window.isReleasedWhenClosed = false
         window.center()
         super.init(window: window)
@@ -142,7 +142,7 @@ final class MappingPreferencesWindowController: NSWindowController,
     private func buildContent(in window: NSWindow) {
         let listColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("mapping"))
         listColumn.title = "Mappings"
-        listColumn.width = 300
+        listColumn.width = 680
         tableView.addTableColumn(listColumn)
         tableView.headerView = nil
         tableView.delegate = self
@@ -166,7 +166,7 @@ final class MappingPreferencesWindowController: NSWindowController,
         listScrollView.translatesAutoresizingMaskIntoConstraints = false
 
         let listTitle = NSTextField(labelWithString: "Mappings")
-        listTitle.font = .systemFont(ofSize: 16, weight: .semibold)
+        listTitle.font = .systemFont(ofSize: 20, weight: .semibold)
         let listDescription = NSTextField(
             wrappingLabelWithString: "Select a mapping to edit its trigger and action."
         )
@@ -181,6 +181,7 @@ final class MappingPreferencesWindowController: NSWindowController,
         removeButton.target = self
         removeButton.action = #selector(removeMappingPressed)
         removeButton.controlSize = .regular
+        removeButton.keyEquivalent = ""
 
         let listButtons = NSStackView(
             views: [
@@ -193,69 +194,57 @@ final class MappingPreferencesWindowController: NSWindowController,
         )
         listButtons.orientation = .horizontal
         listButtons.alignment = .centerY
-        listButtons.spacing = 6
+        listButtons.spacing = 8
 
-        let listColumnStack = NSStackView(
+        let listSection = NSStackView(
             views: [listTitle, listDescription, listScrollView, listButtons]
         )
-        listColumnStack.orientation = .vertical
-        listColumnStack.alignment = .width
-        listColumnStack.spacing = 8
-        listColumnStack.setCustomSpacing(2, after: listTitle)
-        listColumnStack.setCustomSpacing(12, after: listDescription)
-        listScrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 300).isActive = true
+        listSection.orientation = .vertical
+        listSection.alignment = .width
+        listSection.spacing = 8
+        listSection.setCustomSpacing(4, after: listTitle)
+        listSection.setCustomSpacing(12, after: listDescription)
+        listScrollView.heightAnchor.constraint(equalToConstant: 188).isActive = true
 
         configureEditorControls()
         editorStack.orientation = .vertical
         editorStack.alignment = .width
-        editorStack.spacing = 12
+        editorStack.spacing = 10
 
-        editorTitle.font = .systemFont(ofSize: 16, weight: .semibold)
+        editorTitle.font = .systemFont(ofSize: 20, weight: .semibold)
         editorDescription.textColor = .secondaryLabelColor
         editorDescription.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        editorDescription.preferredMaxLayoutWidth = 520
+        editorDescription.preferredMaxLayoutWidth = 680
         editorDescription.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         let editorHeader = NSStackView(views: [editorTitle, editorDescription])
         editorHeader.orientation = .vertical
-        editorHeader.alignment = .leading
+        editorHeader.alignment = .width
         editorHeader.spacing = 4
 
-        let editorPanel = NSBox()
-        editorPanel.boxType = .custom
-        editorPanel.titlePosition = .noTitle
-        editorPanel.borderType = .lineBorder
-        editorPanel.contentViewMargins = NSSize(width: 24, height: 22)
-        guard let editorContentView = editorPanel.contentView else {
-            fatalError("NSBox did not create a content view")
-        }
+        let editorPanel = NSView()
+        editorPanel.wantsLayer = true
+        editorPanel.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        editorPanel.layer?.borderColor = NSColor.separatorColor.cgColor
+        editorPanel.layer?.borderWidth = 1
+        editorPanel.layer?.cornerRadius = 8
+        editorPanel.layer?.masksToBounds = true
         editorStack.translatesAutoresizingMaskIntoConstraints = false
-        editorContentView.addSubview(editorStack)
+        editorPanel.addSubview(editorStack)
         NSLayoutConstraint.activate([
-            editorStack.leadingAnchor.constraint(equalTo: editorContentView.leadingAnchor),
-            editorStack.trailingAnchor.constraint(equalTo: editorContentView.trailingAnchor),
-            editorStack.topAnchor.constraint(equalTo: editorContentView.topAnchor),
-            editorStack.bottomAnchor.constraint(lessThanOrEqualTo: editorContentView.bottomAnchor),
+            editorStack.leadingAnchor.constraint(equalTo: editorPanel.leadingAnchor, constant: 22),
+            editorStack.trailingAnchor.constraint(equalTo: editorPanel.trailingAnchor, constant: -22),
+            editorStack.topAnchor.constraint(equalTo: editorPanel.topAnchor, constant: 18),
+            editorStack.bottomAnchor.constraint(equalTo: editorPanel.bottomAnchor, constant: -18),
         ])
 
-        let editorColumnStack = NSStackView(views: [editorHeader, editorPanel])
-        editorColumnStack.orientation = .vertical
-        editorColumnStack.alignment = .width
-        editorColumnStack.spacing = 12
-        editorColumnStack.widthAnchor.constraint(greaterThanOrEqualToConstant: 450).isActive = true
-        editorPanel.heightAnchor.constraint(greaterThanOrEqualToConstant: 300).isActive = true
+        editorPanel.heightAnchor.constraint(greaterThanOrEqualToConstant: 270).isActive = true
         editorPanel.setContentHuggingPriority(.defaultLow, for: .vertical)
         editorPanel.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
-
-        let split = NSSplitView()
-        split.isVertical = true
-        split.dividerStyle = .thin
-        split.addArrangedSubview(listColumnStack)
-        split.addArrangedSubview(editorColumnStack)
-        listColumnStack.widthAnchor.constraint(equalToConstant: 310).priority = .defaultHigh
-        listColumnStack.widthAnchor.constraint(greaterThanOrEqualToConstant: 280).isActive = true
-        split.setPosition(320, ofDividerAt: 0)
-        split.translatesAutoresizingMaskIntoConstraints = false
+        let editorSection = NSStackView(views: [editorHeader, editorPanel])
+        editorSection.orientation = .vertical
+        editorSection.alignment = .width
+        editorSection.spacing = 10
 
         let restoreButton = NSButton(
             title: "Restore Defaults",
@@ -282,11 +271,11 @@ final class MappingPreferencesWindowController: NSWindowController,
         footer.alignment = .centerY
         footer.spacing = 12
 
-        let root = NSStackView(views: [split, footer])
+        let root = NSStackView(views: [listSection, editorSection, footer])
         root.orientation = .vertical
         root.alignment = .width
-        root.spacing = 14
-        root.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+        root.spacing = 18
+        root.edgeInsets = NSEdgeInsets(top: 22, left: 24, bottom: 18, right: 24)
         root.translatesAutoresizingMaskIntoConstraints = false
 
         let content = NSView()
@@ -297,10 +286,7 @@ final class MappingPreferencesWindowController: NSWindowController,
             root.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             root.topAnchor.constraint(equalTo: content.topAnchor),
             root.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            split.heightAnchor.constraint(greaterThanOrEqualToConstant: 430),
         ])
-        split.setContentHuggingPriority(.defaultLow, for: .vertical)
-        split.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         window.initialFirstResponder = tableView
     }
 
