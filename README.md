@@ -108,6 +108,16 @@ menu bar and as its app icon. Its menu has:
   - **Press and hold** has independent start-delay, speed, and easing controls.
     **Time to full speed** controls acceleration, while **Glide after release**
     controls deceleration. Both range from 0.05–1.00 s.
+  - **Joystick mode** is enabled by default and makes press-and-hold speed
+    respond to mouse movement while locking and hiding the pointer. The
+    configured speed is neutral; moving in the active scroll direction
+    accelerates up to 3×, while moving against it enters a broad paused zone
+    before reversing up to 2×. A small HUD shows the active direction, paused
+    zone, and speed.
+  - **Middle button** can optionally activate joystick mode immediately from
+    its paused center. Moving up scrolls in one direction and moving down
+    scrolls in the other; releasing the wheel button exits joystick mode. When
+    enabled, the app consumes the middle click instead of passing it through.
   - **Restore Defaults** resets every setting.
   - Behavior toggles apply immediately; button assignments and repeat timing
     apply on the next button press. Everything is saved right away, with no
