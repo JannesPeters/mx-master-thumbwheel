@@ -22,11 +22,18 @@ rm -rf "$APP_BUNDLE"
 rm -rf "$ICONSET_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 
-swiftc \
-    -O \
-    -whole-module-optimization \
-    "$ROOT_DIR/main.swift" \
-    -o "$MACOS_DIR/ThumbwheelRemapper"
+swift build \
+    --configuration release \
+    --product ThumbwheelRemapper \
+    --package-path "$ROOT_DIR"
+
+BIN_DIR="$(swift build \
+    --configuration release \
+    --product ThumbwheelRemapper \
+    --show-bin-path \
+    --package-path "$ROOT_DIR")"
+
+cp "$BIN_DIR/ThumbwheelRemapper" "$MACOS_DIR/ThumbwheelRemapper"
 
 cp "$ROOT_DIR/Resources/Info.plist" "$CONTENTS_DIR/Info.plist"
 swift "$ROOT_DIR/scripts/generate-app-icon.swift" "$ICONSET_DIR"
