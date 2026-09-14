@@ -261,6 +261,7 @@ private final class ModernMappingPreferencesModel: ObservableObject {
 
 private struct ModernMappingPreferencesView: View {
     @StateObject private var model: ModernMappingPreferencesModel
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     init(
         document: ConfigurationDocument,
@@ -272,7 +273,7 @@ private struct ModernMappingPreferencesView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             List(selection: $model.selection) {
                 Section {
                     ForEach(model.items) { item in
@@ -295,6 +296,17 @@ private struct ModernMappingPreferencesView: View {
             .listStyle(.sidebar)
             .navigationTitle("Mappings")
             .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        withAnimation {
+                            columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+                        }
+                    } label: {
+                        Image(systemName: "sidebar.leading")
+                    }
+                    .help("Show or hide the sidebar")
+                    .accessibilityLabel("Show or hide sidebar")
+                }
                 ToolbarItemGroup(placement: .primaryAction) {
                     Picker("Add", selection: $model.newMappingKind) {
                         ForEach(ModernMappingKind.allCases) { kind in
@@ -618,11 +630,14 @@ final class ModernMappingPreferencesWindowController: NSWindowController {
     ) {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 980, height: 700),
-            styleMask: [.titled, .closable, .resizable],
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = "Thumbwheel Remapper"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.toolbarStyle = .unifiedCompact
         window.minSize = NSSize(width: 860, height: 620)
         window.isReleasedWhenClosed = false
         window.center()
