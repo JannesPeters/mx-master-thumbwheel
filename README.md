@@ -2,7 +2,7 @@
 
 Thumbwheel Remapper is a native macOS menu-bar utility that remaps mouse
 gestures through a Quartz event tap. It has no third-party runtime
-dependencies and supports macOS 10.13 or newer.
+dependencies and targets macOS Tahoe 26 or newer.
 
 The default configuration is intentionally small:
 
@@ -15,7 +15,7 @@ See [PRODUCT.md](PRODUCT.md) for the architecture and product decisions.
 
 ## Requirements
 
-- macOS 10.13 or newer;
+- macOS Tahoe 26 or newer;
 - Swift command-line tools (`swift`, `swiftc`) for source builds;
 - a mouse that exposes compatible Quartz events;
 - Accessibility permission for the installed app.

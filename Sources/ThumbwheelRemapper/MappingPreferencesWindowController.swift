@@ -217,33 +217,31 @@ final class MappingPreferencesWindowController: NSWindowController,
         editorHeader.alignment = .leading
         editorHeader.spacing = 4
 
-        let editorScrollView = NSScrollView()
-        editorScrollView.hasVerticalScroller = true
-        editorScrollView.hasHorizontalScroller = false
-        editorScrollView.borderType = .bezelBorder
-        editorScrollView.translatesAutoresizingMaskIntoConstraints = false
-
-        let editorDocumentView = NSView()
-        editorDocumentView.translatesAutoresizingMaskIntoConstraints = false
-        editorDocumentView.addSubview(editorStack)
-        editorScrollView.documentView = editorDocumentView
+        let editorPanel = NSBox()
+        editorPanel.boxType = .custom
+        editorPanel.titlePosition = .noTitle
+        editorPanel.borderType = .lineBorder
+        editorPanel.contentViewMargins = NSSize(width: 24, height: 22)
+        guard let editorContentView = editorPanel.contentView else {
+            fatalError("NSBox did not create a content view")
+        }
+        editorStack.translatesAutoresizingMaskIntoConstraints = false
+        editorContentView.addSubview(editorStack)
         NSLayoutConstraint.activate([
-            editorDocumentView.widthAnchor.constraint(equalTo: editorScrollView.contentView.widthAnchor),
-            editorDocumentView.heightAnchor.constraint(
-                greaterThanOrEqualTo: editorScrollView.contentView.heightAnchor
-            ),
-            editorStack.leadingAnchor.constraint(equalTo: editorDocumentView.leadingAnchor, constant: 24),
-            editorStack.trailingAnchor.constraint(equalTo: editorDocumentView.trailingAnchor, constant: -24),
-            editorStack.topAnchor.constraint(equalTo: editorDocumentView.topAnchor, constant: 22),
-            editorStack.bottomAnchor.constraint(equalTo: editorDocumentView.bottomAnchor, constant: -22),
+            editorStack.leadingAnchor.constraint(equalTo: editorContentView.leadingAnchor),
+            editorStack.trailingAnchor.constraint(equalTo: editorContentView.trailingAnchor),
+            editorStack.topAnchor.constraint(equalTo: editorContentView.topAnchor),
+            editorStack.bottomAnchor.constraint(lessThanOrEqualTo: editorContentView.bottomAnchor),
         ])
 
-        let editorColumnStack = NSStackView(views: [editorHeader, editorScrollView])
+        let editorColumnStack = NSStackView(views: [editorHeader, editorPanel])
         editorColumnStack.orientation = .vertical
         editorColumnStack.alignment = .width
         editorColumnStack.spacing = 12
         editorColumnStack.widthAnchor.constraint(greaterThanOrEqualToConstant: 450).isActive = true
-        editorScrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 300).isActive = true
+        editorPanel.heightAnchor.constraint(greaterThanOrEqualToConstant: 300).isActive = true
+        editorPanel.setContentHuggingPriority(.defaultLow, for: .vertical)
+        editorPanel.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
         let split = NSSplitView()
         split.isVertical = true

@@ -1,11 +1,11 @@
-// swift-tools-version: 5.7
+// swift-tools-version: 6.2
 
 import PackageDescription
 
 let package = Package(
     name: "ThumbwheelRemapper",
     platforms: [
-        .macOS(.v10_13),
+        .macOS(.v26),
     ],
     products: [
         .library(
@@ -32,5 +32,6 @@ let package = Package(
             dependencies: ["ThumbwheelRemapperCore"],
             path: "Tests/ThumbwheelRemapperCoreTests"
         ),
-    ]
+    ],
+    swiftLanguageModes: [.v5]
 )

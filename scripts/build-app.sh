@@ -40,16 +40,6 @@ swift "$ROOT_DIR/scripts/generate-app-icon.swift" "$ICONSET_DIR"
 iconutil --convert icns "$ICONSET_DIR" --output "$RESOURCES_DIR/AppIcon.icns"
 rm -rf "$ICONSET_DIR"
 
-# Swift 6 compatibility libraries are linked with a macOS 11 load-command
-# minimum even when SwiftPM compiles this package for macOS 10.13. Rewrite the
-# app's load command to retain the package's declared deployment target.
-SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
-vtool \
-    -set-build-version macos 10.13 "$SDK_VERSION" \
-    -output "$BUILD_DIR/ThumbwheelRemapper.vtool" \
-    "$MACOS_DIR/ThumbwheelRemapper"
-mv "$BUILD_DIR/ThumbwheelRemapper.vtool" "$MACOS_DIR/ThumbwheelRemapper"
-
 codesign \
     --force \
     --sign "$SIGNING_IDENTITY" \

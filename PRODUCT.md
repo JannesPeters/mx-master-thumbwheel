@@ -83,7 +83,7 @@ sampleable easing curve.
 
 ## Build and compatibility
 
-The package declares macOS 10.13 as its minimum platform. The signed app
+The package declares macOS Tahoe 26 as its minimum platform. The signed app
 bundle workflow remains `scripts/build-app.sh`; it now builds the executable
 target with Swift Package Manager before copying it into the existing bundle
 layout, generating the icon, and signing the result.
