@@ -22,16 +22,33 @@ rm -rf "$APP_BUNDLE"
 rm -rf "$ICONSET_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 
-swiftc \
-    -O \
-    -whole-module-optimization \
-    "$ROOT_DIR/main.swift" \
-    -o "$MACOS_DIR/ThumbwheelRemapper"
+swift build \
+    --configuration release \
+    --product ThumbwheelRemapper \
+    --package-path "$ROOT_DIR"
+
+BIN_DIR="$(swift build \
+    --configuration release \
+    --product ThumbwheelRemapper \
+    --show-bin-path \
+    --package-path "$ROOT_DIR")"
+
+cp "$BIN_DIR/ThumbwheelRemapper" "$MACOS_DIR/ThumbwheelRemapper"
 
 cp "$ROOT_DIR/Resources/Info.plist" "$CONTENTS_DIR/Info.plist"
 swift "$ROOT_DIR/scripts/generate-app-icon.swift" "$ICONSET_DIR"
 iconutil --convert icns "$ICONSET_DIR" --output "$RESOURCES_DIR/AppIcon.icns"
 rm -rf "$ICONSET_DIR"
+
+# Swift 6 compatibility libraries are linked with a macOS 11 load-command
+# minimum even when SwiftPM compiles this package for macOS 10.13. Rewrite the
+# app's load command to retain the package's declared deployment target.
+SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
+vtool \
+    -set-build-version macos 10.13 "$SDK_VERSION" \
+    -output "$BUILD_DIR/ThumbwheelRemapper.vtool" \
+    "$MACOS_DIR/ThumbwheelRemapper"
+mv "$BUILD_DIR/ThumbwheelRemapper.vtool" "$MACOS_DIR/ThumbwheelRemapper"
 
 codesign \
     --force \

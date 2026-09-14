@@ -1,0 +1,275 @@
+import XCTest
+@testable import ThumbwheelRemapperCore
+
+final class ConfigurationTests: XCTestCase {
+    func testDefaultsDescribeThumbwheelAndSingleClicksOnly() {
+        let defaults = ConfigurationDocument.defaults
+
+        XCTAssertEqual(defaults.buttonClicks.count, 2)
+        XCTAssertTrue(defaults.buttonHolds.isEmpty)
+        XCTAssertEqual(defaults.wheelMappings.count, 1)
+        XCTAssertEqual(defaults.buttonClicks.first?.button, .other(3))
+        XCTAssertEqual(defaults.buttonClicks.first?.action.direction, .down)
+        XCTAssertEqual(defaults.buttonClicks.last?.button, .other(4))
+        XCTAssertEqual(defaults.buttonClicks.last?.action.direction, .up)
+        XCTAssertEqual(defaults.wheelMappings.first?.source, .horizontalThumbwheel)
+    }
+
+    func testDuplicateValidationAllowsIndependentClickKindsButRejectsSameGesture() {
+        var document = ConfigurationDocument.defaults
+        document.buttonClicks.append(
+            ButtonClickMapping(
+                button: .other(3),
+                click: .double,
+                action: ScrollActionOptions(direction: .up)
+            )
+        )
+        XCTAssertTrue(MappingValidator.validate(document).isEmpty)
+
+        document.buttonClicks.append(
+            ButtonClickMapping(
+                button: .other(3),
+                click: .single,
+                action: ScrollActionOptions(direction: .up)
+            )
+        )
+        XCTAssertTrue(
+            MappingValidator.validate(document).contains {
+                if case .duplicateClick(.other(3), .single) = $0.kind {
+                    return true
+                }
+                return false
+            }
+        )
+    }
+
+    func testStoreUsesNewKeyAndFallsBackOnDecodeFailure() {
+        let storage = TestStorage()
+        var messages: [String] = []
+        let store = ConfigurationStore(storage: storage, logger: { messages.append($0) })
+
+        storage.values["BackButtonNumber"] = Data("3".utf8)
+        XCTAssertEqual(store.load(), .defaults)
+        XCTAssertTrue(store.save(.defaults))
+        XCTAssertNotNil(storage.data(forKey: ConfigurationStore.storageKey))
+        XCTAssertEqual(store.load(), .defaults)
+
+        storage.values[ConfigurationStore.storageKey] = Data("not-json".utf8)
+        XCTAssertEqual(store.load(), .defaults)
+        XCTAssertTrue(messages.contains { $0.contains("could not decode") })
+    }
+
+    func testStoreLogsPersistenceFailure() {
+        let storage = TestStorage()
+        storage.error = TestError.writeFailed
+        var messages: [String] = []
+        let store = ConfigurationStore(storage: storage, logger: { messages.append($0) })
+
+        XCTAssertFalse(store.save(.defaults))
+        XCTAssertTrue(messages.contains { $0.contains("could not save") })
+    }
+}
+
+final class GestureTimingTests: XCTestCase {
+    func testSingleClickIsImmediateWithoutDoubleMapping() {
+        var recognizer = ButtonGestureRecognizer(
+            timing: GestureTimingPolicy(doubleClickInterval: 0.5)
+        )
+        let outputs = recognizer.buttonDown(
+            .other(3),
+            at: 10,
+            hasSingleMapping: true,
+            hasDoubleMapping: false,
+            hasHoldMapping: false
+        )
+        XCTAssertEqual(outputs, [.single(.other(3))])
+        XCTAssertFalse(recognizer.isWaiting)
+    }
+
+    func testDoubleMappingDelaysSingleUntilIntervalAndRecognizesDouble() {
+        var recognizer = ButtonGestureRecognizer(
+            timing: GestureTimingPolicy(doubleClickInterval: 0.25)
+        )
+        XCTAssertTrue(
+            recognizer.buttonDown(
+                .other(3),
+                at: 10,
+                hasSingleMapping: true,
+                hasDoubleMapping: true,
+                hasHoldMapping: false
+            ).isEmpty
+        )
+        XCTAssertEqual(recognizer.advance(to: 10.24), [])
+        XCTAssertEqual(recognizer.advance(to: 10.25), [.single(.other(3))])
+
+        XCTAssertTrue(
+            recognizer.buttonDown(
+                .other(3),
+                at: 20,
+                hasSingleMapping: true,
+                hasDoubleMapping: true,
+                hasHoldMapping: false
+            ).isEmpty
+        )
+        XCTAssertEqual(
+            recognizer.buttonDown(
+                .other(3),
+                at: 20.1,
+                hasSingleMapping: true,
+                hasDoubleMapping: true,
+                hasHoldMapping: false
+            ),
+            [.double(.other(3))]
+        )
+    }
+
+    func testHoldRemainsIndependentWhenDoubleMappingExists() {
+        var recognizer = ButtonGestureRecognizer(
+            timing: GestureTimingPolicy(doubleClickInterval: 0.2, holdDelay: 0.4)
+        )
+        XCTAssertTrue(
+            recognizer.buttonDown(
+                .other(3),
+                at: 0,
+                hasSingleMapping: true,
+                hasDoubleMapping: true,
+                hasHoldMapping: true
+            ).isEmpty
+        )
+        XCTAssertEqual(recognizer.advance(to: 0.25), [])
+        XCTAssertEqual(recognizer.advance(to: 0.4), [.hold(.other(3))])
+        XCTAssertEqual(recognizer.buttonUp(.other(3), at: 0.45), [])
+    }
+
+    func testSingleStillArrivesAfterEarlyReleaseWhenDoubleAndHoldExist() {
+        var recognizer = ButtonGestureRecognizer(
+            timing: GestureTimingPolicy(doubleClickInterval: 0.2, holdDelay: 0.4)
+        )
+        _ = recognizer.buttonDown(
+            .other(3),
+            at: 0,
+            hasSingleMapping: true,
+            hasDoubleMapping: true,
+            hasHoldMapping: true
+        )
+        XCTAssertEqual(recognizer.buttonUp(.other(3), at: 0.1), [])
+        XCTAssertEqual(recognizer.advance(to: 0.2), [.single(.other(3))])
+    }
+}
+
+final class RoutingTests: XCTestCase {
+    func testRouterConsumesOnlyMappedButtons() {
+        let router = EventRouter()
+        XCTAssertEqual(
+            router.route(.buttonDown(.other(3))),
+            .consume
+        )
+        XCTAssertEqual(
+            router.route(.buttonDown(.other(9))),
+            .forward
+        )
+        XCTAssertEqual(
+            router.route(.buttonDown(.left)),
+            .forward
+        )
+    }
+
+    func testWheelRouterTransformsHorizontalNonContinuousEvents() {
+        let router = EventRouter()
+        let event = WheelEvent(
+            integerHorizontal: 4,
+            horizontal: 4,
+            pointHorizontal: 4
+        )
+        guard case let .mapped(.wheel(_, transformed)) = router.route(.wheel(event)) else {
+            return XCTFail("Expected a mapped wheel event")
+        }
+        XCTAssertEqual(transformed.vertical, 4)
+        XCTAssertEqual(transformed.integerVertical, 4)
+        XCTAssertEqual(transformed.horizontal, 0)
+        XCTAssertEqual(transformed.pointVertical, 4)
+    }
+
+    func testWheelDetectorRejectsContinuousAndDiagonalEvents() {
+        XCTAssertFalse(
+            WheelSourceDetector.isHorizontalThumbwheel(
+                WheelEvent(horizontal: 2, isContinuous: true)
+            )
+        )
+        XCTAssertFalse(
+            WheelSourceDetector.isHorizontalThumbwheel(
+                WheelEvent(vertical: 1, horizontal: 2)
+            )
+        )
+    }
+
+    func testEventTapReenableIsolatedFromRouting() {
+        let gate = EventTapReenableGate()
+        XCTAssertTrue(gate.shouldReenable(for: .tapDisabled(.timeout)))
+        XCTAssertTrue(gate.shouldReenable(for: .tapDisabled(.userInput)))
+        XCTAssertFalse(gate.shouldReenable(for: .other))
+    }
+}
+
+final class EngineTests: XCTestCase {
+    func testDiscreteScrollAnimationIsDeterministic() {
+        let animation = DiscreteScrollAnimation(
+            distance: 100,
+            duration: 1,
+            easing: .linear
+        )
+        XCTAssertEqual(animation.position(at: 0.25), 25, accuracy: 0.0001)
+        XCTAssertEqual(animation.delta(from: 0.25, to: 0.75), 50, accuracy: 0.0001)
+        XCTAssertEqual(animation.position(at: 2), 100, accuracy: 0.0001)
+    }
+
+    func testJoystickStartsAtZeroForOneAndTwoDimensions() {
+        var one = JoystickDisplacement1D()
+        XCTAssertEqual(one.update(pointer: 100), 0)
+        XCTAssertEqual(one.update(pointer: 125), 25)
+
+        var two = JoystickDisplacement2D()
+        XCTAssertEqual(two.update(pointer: Point2D(x: 10, y: 20)), .zero)
+        XCTAssertEqual(two.update(pointer: Point2D(x: 13, y: 14)), Point2D(x: 3, y: -6))
+    }
+
+    func testContinuousAndDragEnginesProduceStableMotion() {
+        var continuous = ContinuousScrollEngine(response: 100)
+        let first = continuous.advance(targetVelocity: 100, deltaTime: 0.1)
+        XCTAssertEqual(first, 10, accuracy: 0.0001)
+
+        var drag = DragScrollMomentumEngine(friction: 1)
+        XCTAssertEqual(drag.drag(delta: 20, deltaTime: 0.1), 20)
+        drag.release()
+        XCTAssertGreaterThan(drag.advance(deltaTime: 0.1), 0)
+        XCTAssertGreaterThan(drag.velocity, 0)
+    }
+
+    func testJoystickSpeedHasNeutralAndDirectionZones() {
+        let profile = JoystickSpeedProfile()
+        XCTAssertEqual(profile.multiplier(for: 0), 1)
+        XCTAssertEqual(profile.multiplier(for: -100), 0)
+        XCTAssertGreaterThan(profile.multiplier(for: 300), 1)
+        XCTAssertLessThan(profile.multiplier(for: -300), 0)
+    }
+}
+
+private enum TestError: Error {
+    case writeFailed
+}
+
+private final class TestStorage: ConfigurationStorage {
+    var values: [String: Data] = [:]
+    var error: Error?
+
+    func data(forKey key: String) -> Data? {
+        values[key]
+    }
+
+    func set(_ data: Data, forKey key: String) throws {
+        if let error {
+            throw error
+        }
+        values[key] = data
+    }
+}
