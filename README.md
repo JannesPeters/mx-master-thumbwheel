@@ -61,16 +61,18 @@ The package has three targets:
 
 ```text
 ThumbwheelRemapperCore       Foundation-only library
-ThumbwheelRemapper            AppKit/ApplicationServices executable
+ThumbwheelRemapper            SwiftUI/AppKit/ApplicationServices executable
 ThumbwheelRemapperCoreTests   Focused deterministic unit tests
 ```
 
 The core owns the versioned Codable configuration document, mapping models,
 validation, gesture timing, animation and momentum engines, joystick math,
 wheel transforms, Quartz-shaped event normalization, and routing decisions.
-The executable owns the event tap lifecycle, timers, synthetic scroll output,
-AppKit cursor lock/hide, the joystick HUD, page-distance lookup, status item,
-and native mapping manager UI.
+The executable uses the SwiftUI app lifecycle for its `MenuBarExtra`,
+scene-managed mappings window, native sidebar, toolbar, and forms. AppKit and
+ApplicationServices remain responsible for the event tap lifecycle, timers,
+synthetic scroll output, cursor lock/hide, joystick HUD, and page-distance
+lookup.
 
 The persisted document is stored as JSON data under the new key
 `ThumbwheelRemapper.Configuration.v1`. There is no migration from the

@@ -50,9 +50,9 @@ The executable target contains the macOS platform layer:
 - display/accessibility page-distance lookup;
 - timers for gesture deadlines, animation frames, hold scrolling, and momentum;
 - synthetic pixel scroll events;
-- a status item and native mapping manager preferences window.
+- a SwiftUI `MenuBarExtra` and scene-managed native mapping window.
 
-The preferences window edits the core document directly. It provides a
+The SwiftUI mappings window edits the core document directly. It provides a
 mapping list, add/remove actions, contextual editing, button capture, disabled
 already-used choices, inline validation, immediate persistence, Restore
 Defaults, and help text. Invalid documents stay visible for correction but are

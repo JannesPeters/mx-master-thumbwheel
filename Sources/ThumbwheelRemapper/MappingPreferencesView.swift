@@ -3,17 +3,6 @@ import Combine
 import SwiftUI
 import ThumbwheelRemapperCore
 
-private final class FullWindowHostingView<Content: View>: NSHostingView<Content> {
-    override var safeAreaInsets: NSEdgeInsets { NSEdgeInsets() }
-    override var safeAreaRect: NSRect { bounds }
-}
-
-private final class FullWindowHostingController<Content: View>: NSHostingController<Content> {
-    override func loadView() {
-        view = FullWindowHostingView(rootView: rootView)
-    }
-}
-
 private enum ModernMappingKind: String, CaseIterable, Identifiable {
     case click
     case hold
@@ -274,7 +263,7 @@ private final class ModernMappingPreferencesModel: ObservableObject {
     }
 }
 
-private struct ModernMappingPreferencesView: View {
+struct MappingPreferencesView: View {
     @StateObject private var model: ModernMappingPreferencesModel
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
@@ -289,37 +278,30 @@ private struct ModernMappingPreferencesView: View {
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            ZStack {
-                Rectangle()
-                    .fill(.thinMaterial)
-                    .ignoresSafeArea()
-
-                List(selection: $model.selection) {
-                    Section {
-                        ForEach(model.items) { item in
-                            Label {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.title)
-                                    Text(item.detail)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            } icon: {
-                                Image(systemName: item.symbolName)
-                                    .frame(width: 20)
+            List(selection: $model.selection) {
+                Section {
+                    ForEach(model.items) { item in
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.title)
+                                Text(item.detail)
+                                    .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
-                            .tag(item.selection)
+                        } icon: {
+                            Image(systemName: item.symbolName)
+                                .frame(width: 20)
+                                .foregroundStyle(.secondary)
                         }
-                    }
-                    Section {
-                        Label("About", systemImage: "info.circle")
-                            .tag(ModernMappingSelection.about)
+                        .tag(item.selection)
                     }
                 }
-                .scrollContentBackground(.hidden)
-                .listStyle(.sidebar)
+                Section {
+                    Label("About", systemImage: "info.circle")
+                        .tag(ModernMappingSelection.about)
+                }
             }
+            .listStyle(.sidebar)
             .navigationTitle("Mappings")
             .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 300)
         } detail: {
@@ -349,7 +331,6 @@ private struct ModernMappingPreferencesView: View {
                 }
         }
         .navigationSplitViewStyle(.prominentDetail)
-        .ignoresSafeArea(.container, edges: .top)
         .frame(minWidth: 900, minHeight: 650)
     }
 
@@ -656,41 +637,5 @@ private struct ModernMappingPreferencesView: View {
             get: { String(format: "%.2f", get()) },
             set: set
         )
-    }
-}
-
-final class ModernMappingPreferencesWindowController: NSWindowController {
-    init(
-        document: ConfigurationDocument,
-        onChange: @escaping (ConfigurationDocument, [MappingValidationIssue]) -> Void
-    ) {
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 980, height: 700),
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "Thumbwheel Remapper"
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.toolbarStyle = .unifiedCompact
-        window.titlebarSeparatorStyle = .none
-        window.minSize = NSSize(width: 860, height: 620)
-        window.isReleasedWhenClosed = false
-        window.center()
-        window.contentViewController = FullWindowHostingController(
-            rootView: ModernMappingPreferencesView(document: document, onChange: onChange)
-        )
-        super.init(window: window)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) is not supported")
-    }
-
-    func show() {
-        NSApp.activate(ignoringOtherApps: true)
-        window?.makeKeyAndOrderFront(nil)
     }
 }

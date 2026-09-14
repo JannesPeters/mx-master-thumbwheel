@@ -1,69 +1,21 @@
 import AppKit
 import ApplicationServices
 import CoreGraphics
-import Foundation
+import SwiftUI
 import ThumbwheelRemapperCore
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let store: ConfigurationStore
-    private var document: ConfigurationDocument
-    private var statusItem: NSStatusItem?
-    private var mappingWindow: ModernMappingPreferencesWindowController?
+@MainActor
+final class RemapperRuntime {
+    private let store = ConfigurationStore()
+    private(set) var document: ConfigurationDocument
     private var eventTapController: EventTapController?
     private var eventTapRunLoopSource: CFRunLoopSource?
 
-    override init() {
-        store = ConfigurationStore()
+    init() {
         document = store.load()
-        super.init()
     }
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
-        installStatusItem()
-        startEventTap()
-    }
-
-    @objc private func showPreferences() {
-        if mappingWindow == nil {
-            mappingWindow = ModernMappingPreferencesWindowController(
-                document: document
-            ) { [weak self] document, issues in
-                guard let self else { return }
-                guard issues.isEmpty else { return }
-                guard self.store.save(document) else { return }
-                self.document = document
-                self.eventTapController?.update(document: document)
-            }
-        }
-        mappingWindow?.show()
-    }
-
-    @objc private func quit() {
-        NSApp.terminate(nil)
-    }
-
-    private func installStatusItem() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.image = makeStatusItemImage()
-        item.button?.imagePosition = .imageOnly
-        item.button?.toolTip = "Thumbwheel Remapper"
-
-        let menu = NSMenu()
-        let preferences = menu.addItem(
-            withTitle: "Mappings…",
-            action: #selector(showPreferences),
-            keyEquivalent: ","
-        )
-        preferences.target = self
-        menu.addItem(.separator())
-        let quit = menu.addItem(withTitle: "Quit", action: #selector(quit), keyEquivalent: "q")
-        quit.target = self
-        item.menu = menu
-        statusItem = item
-    }
-
-    private func startEventTap() {
+    func start() {
         let controller = EventTapController(document: document)
         guard let eventTap = controller.createEventTap() else {
             if AXIsProcessTrusted() {
@@ -93,6 +45,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         eventTapRunLoopSource = source
     }
 
+    func update(
+        document: ConfigurationDocument,
+        issues: [MappingValidationIssue]
+    ) {
+        guard issues.isEmpty else { return }
+        guard store.save(document) else { return }
+        self.document = document
+        eventTapController?.update(document: document)
+    }
+
     private func showAccessibilityPrompt() {
         let alert = NSAlert()
         alert.messageText = "Accessibility permission required"
@@ -101,7 +63,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "Quit")
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn,
-           let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+           let url = URL(
+               string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+           ) {
             NSWorkspace.shared.open(url)
         }
         NSApp.terminate(nil)
@@ -118,7 +82,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-let application = NSApplication.shared
-let delegate = AppDelegate()
-application.delegate = delegate
-application.run()
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    let runtime = RemapperRuntime()
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+        runtime.start()
+    }
+}
+
+private struct StatusMenu: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("Mappings…") {
+            openWindow(id: "mappings")
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        .keyboardShortcut(",")
+
+        Divider()
+
+        Button("Quit Thumbwheel Remapper") {
+            NSApp.terminate(nil)
+        }
+        .keyboardShortcut("q")
+    }
+}
+
+@main
+struct ThumbwheelRemapperApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
+    var body: some Scene {
+        MenuBarExtra {
+            StatusMenu()
+        } label: {
+            Image(nsImage: makeStatusItemImage())
+        }
+        .menuBarExtraStyle(.menu)
+
+        Window("Thumbwheel Remapper", id: "mappings") {
+            MappingPreferencesView(
+                document: appDelegate.runtime.document,
+                onChange: appDelegate.runtime.update
+            )
+        }
+        .defaultSize(width: 980, height: 700)
+        .defaultLaunchBehavior(.suppressed)
+        .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unifiedCompact)
+    }
+}
