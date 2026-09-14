@@ -5,6 +5,7 @@ public struct MappingValidationIssue: Equatable, CustomStringConvertible {
         case duplicateClick(button: InputButton, click: ButtonClickKind)
         case duplicateHold(button: InputButton)
         case duplicateWheel(source: WheelMappingSource)
+        case unsupportedButton(button: InputButton)
         case invalidValue(String)
     }
 
@@ -26,6 +27,8 @@ public struct MappingValidationIssue: Equatable, CustomStringConvertible {
             return "\(button.displayName) already has a hold mapping."
         case let .duplicateWheel(source):
             return "\(source.displayName) already has a wheel mapping."
+        case let .unsupportedButton(button):
+            return "\(button.displayName) cannot be remapped; only other mouse buttons are supported."
         case let .invalidValue(message):
             return message
         }
@@ -40,6 +43,14 @@ public enum MappingValidator {
         var wheelKeys: [String: UUID] = [:]
 
         for mapping in document.buttonClicks {
+            if mapping.button == .left || mapping.button == .right {
+                issues.append(
+                    MappingValidationIssue(
+                        kind: .unsupportedButton(button: mapping.button),
+                        mappingID: mapping.id
+                    )
+                )
+            }
             let key = "\(mapping.button.id)|\(mapping.click.rawValue)"
             if clickKeys[key] != nil {
                 issues.append(
@@ -56,6 +67,14 @@ public enum MappingValidator {
         }
 
         for mapping in document.buttonHolds {
+            if mapping.button == .left || mapping.button == .right {
+                issues.append(
+                    MappingValidationIssue(
+                        kind: .unsupportedButton(button: mapping.button),
+                        mappingID: mapping.id
+                    )
+                )
+            }
             let key = mapping.button.id
             if holdKeys[key] != nil {
                 issues.append(

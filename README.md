@@ -87,7 +87,9 @@ supports:
 - independent single and double click mappings;
 - hold mappings with direction, speed, acceleration, release, and joystick
   options;
-- button capture for left, right, and other mouse buttons;
+- button capture for other mouse buttons only. The primary left and right
+  buttons are intentionally not remappable because intercepting them can
+  interfere with normal macOS interaction;
 - disabled button choices that are already used by the selected gesture;
 - inline duplicate and parameter validation;
 - immediate save, **Restore Defaults**, and help text.

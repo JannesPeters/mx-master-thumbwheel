@@ -38,6 +38,28 @@ final class ConfigurationTests: XCTestCase {
                 if case .duplicateClick(.other(3), .single) = $0.kind {
                     return true
                 }
+
+                func testLeftAndRightButtonsAreRejected() {
+                    let document = ConfigurationDocument(
+                        buttonClicks: [
+                            ButtonClickMapping(
+                                button: .left,
+                                action: ScrollActionOptions(direction: .up)
+                            )
+                        ],
+                        buttonHolds: [
+                            ButtonHoldMapping(
+                                button: .right,
+                                action: HoldActionOptions(direction: .down)
+                            )
+                        ],
+                        wheelMappings: []
+                    )
+
+                    let issues = MappingValidator.validate(document)
+                    XCTAssertTrue(issues.contains { $0.kind == .unsupportedButton(button: .left) })
+                    XCTAssertTrue(issues.contains { $0.kind == .unsupportedButton(button: .right) })
+                }
                 return false
             }
         )

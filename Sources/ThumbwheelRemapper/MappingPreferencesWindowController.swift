@@ -675,7 +675,7 @@ final class MappingPreferencesWindowController: NSWindowController,
         }
         captureButton.title = "Listening…"
         captureMonitor = NSEvent.addGlobalMonitorForEvents(
-            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+            matching: [.otherMouseDown]
         ) { [weak self] event in
             DispatchQueue.main.async {
                 self?.applyCapturedButton(event)
@@ -688,8 +688,6 @@ final class MappingPreferencesWindowController: NSWindowController,
         guard selectedKind != .wheel else { return }
         let button: InputButton
         switch event.type {
-        case .leftMouseDown: button = .left
-        case .rightMouseDown: button = .right
         case .otherMouseDown: button = .other(Int64(event.buttonNumber))
         default: return
         }
@@ -758,7 +756,7 @@ final class MappingPreferencesWindowController: NSWindowController,
     }
 
     private func firstAvailableButton(for click: ButtonClickKind) -> InputButton? {
-        let candidates: [InputButton] = [.left, .right] + (0...15).map { .other(Int64($0)) }
+        let candidates: [InputButton] = (0...15).map { .other(Int64($0)) }
         return candidates.first(where: { candidate in
             !configuration.buttonClicks.contains { mapping in
                 mapping.button == candidate && mapping.click == click
@@ -767,7 +765,7 @@ final class MappingPreferencesWindowController: NSWindowController,
     }
 
     private func firstAvailableHoldButton() -> InputButton? {
-        let candidates: [InputButton] = [.left, .right] + (0...15).map { .other(Int64($0)) }
+        let candidates: [InputButton] = (0...15).map { .other(Int64($0)) }
         return candidates.first(where: { candidate in
             !configuration.buttonHolds.contains { $0.button == candidate }
         })

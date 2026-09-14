@@ -214,12 +214,10 @@ private final class ModernMappingPreferencesModel: ObservableObject {
         }
         capturingButton = true
         captureMonitor = NSEvent.addGlobalMonitorForEvents(
-            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+            matching: [.otherMouseDown]
         ) { [weak self] event in
             let button: InputButton
             switch event.type {
-            case .leftMouseDown: button = .left
-            case .rightMouseDown: button = .right
             case .otherMouseDown: button = .other(Int64(event.buttonNumber))
             default: return
             }
@@ -253,7 +251,7 @@ private final class ModernMappingPreferencesModel: ObservableObject {
     }
 
     private var allButtons: [InputButton] {
-        [.left, .right] + (0...15).map { .other(Int64($0)) }
+        (0...15).map { .other(Int64($0)) }
     }
 }
 
