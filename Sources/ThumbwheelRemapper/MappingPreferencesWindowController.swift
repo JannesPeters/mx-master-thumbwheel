@@ -270,7 +270,14 @@ final class MappingPreferencesWindowController: NSWindowController,
         help.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         help.preferredMaxLayoutWidth = 600
 
-        let footer = NSStackView(views: [restoreButton, help, NSView()])
+        let versionLabel = NSTextField(labelWithString: appVersionDescription())
+        versionLabel.textColor = .tertiaryLabelColor
+        versionLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        versionLabel.alignment = .right
+        versionLabel.setContentHuggingPriority(.required, for: .horizontal)
+        versionLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        let footer = NSStackView(views: [restoreButton, help, NSView(), versionLabel])
         footer.orientation = .horizontal
         footer.alignment = .centerY
         footer.spacing = 12
@@ -295,6 +302,16 @@ final class MappingPreferencesWindowController: NSWindowController,
         split.setContentHuggingPriority(.defaultLow, for: .vertical)
         split.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         window.initialFirstResponder = tableView
+    }
+
+    private func appVersionDescription() -> String {
+        let shortVersion = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString"
+        ) as? String ?? "Unknown"
+        let build = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleVersion"
+        ) as? String ?? "Unknown"
+        return "Version \(shortVersion) (\(build))"
     }
 
     private func configureEditorControls() {
