@@ -5,7 +5,8 @@ import ThumbwheelRemapperCore
 final class MappingPreferencesWindowController: NSWindowController,
     NSWindowDelegate,
     NSTableViewDataSource,
-    NSTableViewDelegate
+    NSTableViewDelegate,
+    NSMenuDelegate
 {
     private enum MappingKind: String, CaseIterable {
         case click
@@ -28,11 +29,46 @@ final class MappingPreferencesWindowController: NSWindowController,
         var detail: String
     }
 
+    private final class MappingTableCellView: NSTableCellView {
+        let titleLabel = NSTextField(labelWithString: "")
+        let detailLabel = NSTextField(labelWithString: "")
+
+        override init(frame frameRect: NSRect) {
+            super.init(frame: frameRect)
+
+            titleLabel.font = .systemFont(ofSize: NSFont.systemFontSize, weight: .medium)
+            titleLabel.lineBreakMode = .byTruncatingTail
+            detailLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+            detailLabel.textColor = .secondaryLabelColor
+            detailLabel.lineBreakMode = .byTruncatingTail
+
+            let stack = NSStackView(views: [titleLabel, detailLabel])
+            stack.orientation = .vertical
+            stack.alignment = .leading
+            stack.spacing = 2
+            stack.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(stack)
+            NSLayoutConstraint.activate([
+                stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+                stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+                stack.topAnchor.constraint(equalTo: topAnchor, constant: 7),
+                stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -7),
+            ])
+            textField = titleLabel
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) is not supported")
+        }
+    }
+
     private var configuration: ConfigurationDocument
     private var items: [MappingListItem] = []
     private var selectedKind: MappingKind?
     private var selectedID: UUID?
     private var captureMonitor: Any?
+    private var validationIssues: [MappingValidationIssue] = []
     private let onChange: (ConfigurationDocument, [MappingValidationIssue]) -> Void
 
     private let tableView = NSTableView()
@@ -61,6 +97,8 @@ final class MappingPreferencesWindowController: NSWindowController,
     private let captureButton = NSButton(title: "Capture Button", target: nil, action: nil)
     private let removeButton = NSButton(title: "Remove", target: nil, action: nil)
     private let validationLabel = NSTextField(wrappingLabelWithString: "")
+    private let editorTitle = NSTextField(labelWithString: "")
+    private let editorDescription = NSTextField(wrappingLabelWithString: "")
     private let editorStack = NSStackView()
 
     init(
@@ -71,12 +109,13 @@ final class MappingPreferencesWindowController: NSWindowController,
         self.onChange = onChange
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 760, height: 540),
+            contentRect: NSRect(x: 0, y: 0, width: 960, height: 620),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Thumbwheel Remapper Mappings"
+        window.minSize = NSSize(width: 820, height: 520)
         window.isReleasedWhenClosed = false
         window.center()
         super.init(window: window)
@@ -103,53 +142,117 @@ final class MappingPreferencesWindowController: NSWindowController,
     private func buildContent(in window: NSWindow) {
         let listColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("mapping"))
         listColumn.title = "Mappings"
-        listColumn.width = 270
+        listColumn.width = 300
         tableView.addTableColumn(listColumn)
         tableView.headerView = nil
         tableView.delegate = self
         tableView.dataSource = self
         tableView.usesAlternatingRowBackgroundColors = true
+        tableView.rowHeight = 58
+        tableView.intercellSpacing = NSSize(width: 0, height: 1)
+        tableView.selectionHighlightStyle = .regular
+        tableView.focusRingType = .none
         tableView.menu = makeContextMenu()
 
         let listScrollView = NSScrollView()
         listScrollView.hasVerticalScroller = true
+        listScrollView.hasHorizontalScroller = false
         listScrollView.borderType = .bezelBorder
         listScrollView.documentView = tableView
         listScrollView.translatesAutoresizingMaskIntoConstraints = false
 
+        let listTitle = NSTextField(labelWithString: "Mappings")
+        listTitle.font = .systemFont(ofSize: 16, weight: .semibold)
+        let listDescription = NSTextField(
+            wrappingLabelWithString: "Select a mapping to edit its trigger and action."
+        )
+        listDescription.textColor = .secondaryLabelColor
+        listDescription.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+
         kindPopup.addItems(withTitles: MappingKind.allCases.map(\.displayName))
+        kindPopup.widthAnchor.constraint(equalToConstant: 150).isActive = true
 
         let addButton = NSButton(title: "Add", target: self, action: #selector(addMappingPressed))
-        addButton.controlSize = .small
+        addButton.controlSize = .regular
         removeButton.target = self
         removeButton.action = #selector(removeMappingPressed)
-        removeButton.controlSize = .small
+        removeButton.controlSize = .regular
 
-        let listButtons = NSStackView(views: [kindPopup, addButton, removeButton])
+        let listButtons = NSStackView(
+            views: [
+                NSTextField(labelWithString: "Add mapping"),
+                kindPopup,
+                addButton,
+                NSView(),
+                removeButton,
+            ]
+        )
         listButtons.orientation = .horizontal
+        listButtons.alignment = .centerY
         listButtons.spacing = 6
 
-        let listColumnStack = NSStackView(views: [listScrollView, listButtons])
+        let listColumnStack = NSStackView(
+            views: [listTitle, listDescription, listScrollView, listButtons]
+        )
         listColumnStack.orientation = .vertical
+        listColumnStack.alignment = .width
         listColumnStack.spacing = 8
+        listColumnStack.setCustomSpacing(2, after: listTitle)
+        listColumnStack.setCustomSpacing(12, after: listDescription)
+        listScrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 300).isActive = true
 
         configureEditorControls()
         editorStack.orientation = .vertical
         editorStack.alignment = .width
-        editorStack.spacing = 10
+        editorStack.spacing = 12
+
+        editorTitle.font = .systemFont(ofSize: 16, weight: .semibold)
+        editorDescription.textColor = .secondaryLabelColor
+        editorDescription.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        editorDescription.preferredMaxLayoutWidth = 520
+        editorDescription.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        let editorHeader = NSStackView(views: [editorTitle, editorDescription])
+        editorHeader.orientation = .vertical
+        editorHeader.alignment = .leading
+        editorHeader.spacing = 4
 
         let editorScrollView = NSScrollView()
         editorScrollView.hasVerticalScroller = true
+        editorScrollView.hasHorizontalScroller = false
         editorScrollView.borderType = .bezelBorder
-        editorScrollView.documentView = editorStack
         editorScrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        let editorDocumentView = NSView()
+        editorDocumentView.translatesAutoresizingMaskIntoConstraints = false
+        editorDocumentView.addSubview(editorStack)
+        editorScrollView.documentView = editorDocumentView
+        NSLayoutConstraint.activate([
+            editorDocumentView.widthAnchor.constraint(equalTo: editorScrollView.contentView.widthAnchor),
+            editorDocumentView.heightAnchor.constraint(
+                greaterThanOrEqualTo: editorScrollView.contentView.heightAnchor
+            ),
+            editorStack.leadingAnchor.constraint(equalTo: editorDocumentView.leadingAnchor, constant: 24),
+            editorStack.trailingAnchor.constraint(equalTo: editorDocumentView.trailingAnchor, constant: -24),
+            editorStack.topAnchor.constraint(equalTo: editorDocumentView.topAnchor, constant: 22),
+            editorStack.bottomAnchor.constraint(equalTo: editorDocumentView.bottomAnchor, constant: -22),
+        ])
+
+        let editorColumnStack = NSStackView(views: [editorHeader, editorScrollView])
+        editorColumnStack.orientation = .vertical
+        editorColumnStack.alignment = .width
+        editorColumnStack.spacing = 12
+        editorColumnStack.widthAnchor.constraint(greaterThanOrEqualToConstant: 450).isActive = true
+        editorScrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 300).isActive = true
 
         let split = NSSplitView()
         split.isVertical = true
         split.dividerStyle = .thin
         split.addArrangedSubview(listColumnStack)
-        split.addArrangedSubview(editorScrollView)
-        split.setPosition(290, ofDividerAt: 0)
+        split.addArrangedSubview(editorColumnStack)
+        listColumnStack.widthAnchor.constraint(equalToConstant: 310).priority = .defaultHigh
+        listColumnStack.widthAnchor.constraint(greaterThanOrEqualToConstant: 280).isActive = true
+        split.setPosition(320, ofDividerAt: 0)
         split.translatesAutoresizingMaskIntoConstraints = false
 
         let restoreButton = NSButton(
@@ -157,13 +260,13 @@ final class MappingPreferencesWindowController: NSWindowController,
             target: self,
             action: #selector(restoreDefaultsPressed)
         )
-        restoreButton.controlSize = .small
+        restoreButton.controlSize = .regular
         let help = NSTextField(
-            wrappingLabelWithString: "Add one mapping per gesture. A button may have independent single, double, and hold entries. Used button choices are disabled to prevent duplicates. Changes save immediately."
+            wrappingLabelWithString: "Button mappings can have independent single, double, and hold gestures. Used choices are disabled to prevent duplicates. Changes save immediately."
         )
         help.textColor = .secondaryLabelColor
         help.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        help.preferredMaxLayoutWidth = 480
+        help.preferredMaxLayoutWidth = 600
 
         let footer = NSStackView(views: [restoreButton, help, NSView()])
         footer.orientation = .horizontal
@@ -173,7 +276,7 @@ final class MappingPreferencesWindowController: NSWindowController,
         let root = NSStackView(views: [split, footer])
         root.orientation = .vertical
         root.alignment = .width
-        root.spacing = 12
+        root.spacing = 14
         root.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
         root.translatesAutoresizingMaskIntoConstraints = false
 
@@ -185,9 +288,11 @@ final class MappingPreferencesWindowController: NSWindowController,
             root.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             root.topAnchor.constraint(equalTo: content.topAnchor),
             root.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            split.heightAnchor.constraint(greaterThanOrEqualToConstant: 390),
-            listColumnStack.widthAnchor.constraint(greaterThanOrEqualToConstant: 270),
+            split.heightAnchor.constraint(greaterThanOrEqualToConstant: 430),
         ])
+        split.setContentHuggingPriority(.defaultLow, for: .vertical)
+        split.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        window.initialFirstResponder = tableView
     }
 
     private func configureEditorControls() {
@@ -207,6 +312,7 @@ final class MappingPreferencesWindowController: NSWindowController,
             field.target = self
             field.action = #selector(editorChanged)
             field.controlSize = .small
+            field.alignment = .right
         }
         joystickCheckbox.target = self
         joystickCheckbox.action = #selector(editorChanged)
@@ -219,6 +325,7 @@ final class MappingPreferencesWindowController: NSWindowController,
         captureButton.controlSize = .small
         validationLabel.textColor = .systemRed
         validationLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        validationLabel.preferredMaxLayoutWidth = 520
         validationLabel.isHidden = true
     }
 
@@ -230,6 +337,7 @@ final class MappingPreferencesWindowController: NSWindowController,
 
     private func makeContextMenu() -> NSMenu {
         let menu = NSMenu()
+        menu.delegate = self
         menu.addItem(withTitle: "Edit", action: #selector(editContextMapping), keyEquivalent: "")
         menu.addItem(withTitle: "Remove", action: #selector(removeMappingPressed), keyEquivalent: "")
         for item in menu.items {
@@ -238,7 +346,7 @@ final class MappingPreferencesWindowController: NSWindowController,
         return menu
     }
 
-    private func reloadList() {
+    private func reloadList(refreshEditorAfterReload: Bool = true) {
         items = configuration.buttonClicks.map {
             MappingListItem(
                 kind: .click,
@@ -268,7 +376,9 @@ final class MappingPreferencesWindowController: NSWindowController,
            let row = items.firstIndex(where: { $0.id == selectedID }) {
             tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
         }
-        refreshEditor()
+        if refreshEditorAfterReload {
+            refreshEditor()
+        }
     }
 
     private func selectFirstMapping() {
@@ -286,13 +396,29 @@ final class MappingPreferencesWindowController: NSWindowController,
         editorStack.arrangedSubviews.forEach { editorStack.removeArrangedSubview($0); $0.removeFromSuperview() }
         guard let kind = selectedKind,
               let id = selectedID else {
+            editorTitle.stringValue = "No mapping selected"
+            editorDescription.stringValue = "Select a mapping on the left, or add one below the list to configure a new gesture."
             let empty = NSTextField(wrappingLabelWithString: "Select a mapping or add one to begin.")
             empty.textColor = .secondaryLabelColor
+            empty.font = .systemFont(ofSize: 14)
             editorStack.addArrangedSubview(empty)
+            validationLabel.isHidden = true
+            editorStack.addArrangedSubview(validationLabel)
             removeButton.isEnabled = false
             return
         }
         removeButton.isEnabled = true
+        switch kind {
+        case .click:
+            editorTitle.stringValue = "Button click mapping"
+            editorDescription.stringValue = "Choose a button and click gesture, then set the scroll action. Single and double clicks can coexist on the same button."
+        case .hold:
+            editorTitle.stringValue = "Button hold mapping"
+            editorDescription.stringValue = "Hold a button to scroll continuously. Enable joystick mode when pointer displacement should control the speed."
+        case .wheel:
+            editorTitle.stringValue = "Thumbwheel mapping"
+            editorDescription.stringValue = "Configure the horizontal thumbwheel input and how it becomes vertical scrolling."
+        }
         updateButtonChoices(kind: kind, id: id)
 
         if kind == .click {
@@ -325,11 +451,14 @@ final class MappingPreferencesWindowController: NSWindowController,
     private func makeFormRow(_ title: String, _ control: NSView) -> NSStackView {
         let label = NSTextField(labelWithString: title)
         label.alignment = .right
-        label.widthAnchor.constraint(equalToConstant: 115).isActive = true
+        label.widthAnchor.constraint(equalToConstant: 150).isActive = true
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        label.setContentCompressionResistancePriority(.required, for: .horizontal)
+        control.setContentHuggingPriority(.defaultHigh, for: .horizontal)
         let row = NSStackView(views: [label, control, NSView()])
         row.orientation = .horizontal
         row.alignment = .firstBaseline
-        row.spacing = 10
+        row.spacing = 12
         return row
     }
 
@@ -381,6 +510,7 @@ final class MappingPreferencesWindowController: NSWindowController,
             case .page:
                 amountPopup.selectItem(at: 1)
             }
+            distanceField.isEnabled = amountPopup.indexOfSelectedItem == 0
             durationField.doubleValue = mapping.action.duration
             joystickCheckbox.state = .off
 
@@ -400,14 +530,17 @@ final class MappingPreferencesWindowController: NSWindowController,
             shiftCheckbox.state = mapping.action.preserveShiftGestures ? .on : .off
             joystickCheckbox.state = .off
         }
-        validationLabel.isHidden = true
+        displayValidationForSelection()
     }
 
     @objc private func addMappingPressed() {
         let kind = MappingKind.allCases[max(0, kindPopup.indexOfSelectedItem)]
         switch kind {
         case .click:
-            let button = firstAvailableButton(for: .single)
+            guard let button = firstAvailableButton(for: .single) else {
+                showValidation("All available buttons already have a single-click mapping.")
+                return
+            }
             let mapping = ButtonClickMapping(
                 button: button,
                 click: .single,
@@ -417,7 +550,10 @@ final class MappingPreferencesWindowController: NSWindowController,
             selectedKind = .click
             selectedID = mapping.id
         case .hold:
-            let button = firstAvailableHoldButton()
+            guard let button = firstAvailableHoldButton() else {
+                showValidation("All available buttons already have a hold mapping.")
+                return
+            }
             let mapping = ButtonHoldMapping(
                 button: button,
                 action: HoldActionOptions(direction: .up)
@@ -457,6 +593,8 @@ final class MappingPreferencesWindowController: NSWindowController,
     }
 
     @objc private func editContextMapping() {
+        guard tableView.selectedRow >= 0 else { return }
+        window?.makeFirstResponder(nil)
         refreshEditor()
     }
 
@@ -469,27 +607,42 @@ final class MappingPreferencesWindowController: NSWindowController,
             guard let button = inputButton(tag: buttonPopup.selectedItem?.tag ?? -3) else { return }
             guard let index = configuration.buttonClicks.firstIndex(where: { $0.id == id }),
                   let click = ButtonClickKind.allCases[safe: clickPopup.indexOfSelectedItem] else { return }
-            let amount: ScrollAmount = amountPopup.indexOfSelectedItem == 1
-                ? .page
-                : .fixed(max(distanceField.doubleValue, 1))
+            let amount: ScrollAmount
+            if amountPopup.indexOfSelectedItem == 1 {
+                amount = .page
+            } else {
+                guard let points = positiveValue(from: distanceField, label: "Scroll distance") else { return }
+                amount = .fixed(points)
+            }
+            guard let duration = nonNegativeValue(from: durationField, label: "Scroll duration") else {
+                return
+            }
             configuration.buttonClicks[index].button = button
             configuration.buttonClicks[index].click = click
             configuration.buttonClicks[index].action = ScrollActionOptions(
                 direction: direction,
                 amount: amount,
-                duration: max(durationField.doubleValue, 0),
+                duration: duration,
                 easing: .quickInLongOut
             )
 
         case .hold:
             guard let button = inputButton(tag: buttonPopup.selectedItem?.tag ?? -3) else { return }
             guard let index = configuration.buttonHolds.firstIndex(where: { $0.id == id }) else { return }
+            guard let speed = positiveValue(from: speedField, label: "Hold speed"),
+                  let acceleration = nonNegativeValue(
+                      from: accelerationField,
+                      label: "Acceleration duration"
+                  ),
+                  let release = nonNegativeValue(from: releaseField, label: "Release duration") else {
+                return
+            }
             configuration.buttonHolds[index].button = button
             configuration.buttonHolds[index].action = HoldActionOptions(
                 direction: direction,
-                pointsPerSecond: max(speedField.doubleValue, 1),
-                accelerationDuration: max(accelerationField.doubleValue, 0),
-                releaseDuration: max(releaseField.doubleValue, 0),
+                pointsPerSecond: speed,
+                accelerationDuration: acceleration,
+                releaseDuration: release,
                 joystickEnabled: joystickCheckbox.state == .on
             )
 
@@ -503,7 +656,11 @@ final class MappingPreferencesWindowController: NSWindowController,
             )
         }
         commitDocument()
-        reloadList()
+        reloadList(refreshEditorAfterReload: false)
+        updateButtonChoices(kind: kind, id: id)
+        if kind == .click {
+            distanceField.isEnabled = amountPopup.indexOfSelectedItem == 0
+        }
     }
 
     @objc private func captureButtonPressed() {
@@ -553,13 +710,9 @@ final class MappingPreferencesWindowController: NSWindowController,
     }
 
     private func commitDocument() {
-        let issues = MappingValidator.validate(configuration)
-        if let first = issues.first {
-            showValidation(first.description)
-        } else {
-            validationLabel.isHidden = true
-        }
-        onChange(configuration, issues)
+        validationIssues = MappingValidator.validate(configuration)
+        displayValidationForSelection()
+        onChange(configuration, validationIssues)
     }
 
     private func showValidation(_ message: String) {
@@ -567,20 +720,52 @@ final class MappingPreferencesWindowController: NSWindowController,
         validationLabel.isHidden = false
     }
 
-    private func firstAvailableButton(for click: ButtonClickKind) -> InputButton {
+    private func displayValidationForSelection() {
+        guard selectedID != nil else {
+            validationLabel.isHidden = true
+            return
+        }
+        if let issue = validationIssues.first(where: { $0.mappingID == selectedID }) {
+            showValidation(issue.description)
+        } else {
+            validationLabel.isHidden = true
+        }
+    }
+
+    private func positiveValue(from field: NSTextField, label: String) -> Double? {
+        guard let value = Double(field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)),
+              value.isFinite,
+              value > 0 else {
+            showValidation("\(label) must be greater than zero.")
+            return nil
+        }
+        return value
+    }
+
+    private func nonNegativeValue(from field: NSTextField, label: String) -> Double? {
+        guard let value = Double(field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)),
+              value.isFinite,
+              value >= 0 else {
+            showValidation("\(label) cannot be negative.")
+            return nil
+        }
+        return value
+    }
+
+    private func firstAvailableButton(for click: ButtonClickKind) -> InputButton? {
         let candidates: [InputButton] = [.left, .right] + (0...15).map { .other(Int64($0)) }
         return candidates.first(where: { candidate in
             !configuration.buttonClicks.contains { mapping in
                 mapping.button == candidate && mapping.click == click
             }
-        }) ?? .other(0)
+        })
     }
 
-    private func firstAvailableHoldButton() -> InputButton {
+    private func firstAvailableHoldButton() -> InputButton? {
         let candidates: [InputButton] = [.left, .right] + (0...15).map { .other(Int64($0)) }
         return candidates.first(where: { candidate in
             !configuration.buttonHolds.contains { $0.button == candidate }
-        }) ?? .other(0)
+        })
     }
 
     private func inputButton(tag: Int) -> InputButton? {
@@ -610,21 +795,11 @@ final class MappingPreferencesWindowController: NSWindowController,
         row: Int
     ) -> NSView? {
         let identifier = NSUserInterfaceItemIdentifier("mapping-cell")
-        let cell = (tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView)
-            ?? NSTableCellView()
+        let cell = (tableView.makeView(withIdentifier: identifier, owner: self) as? MappingTableCellView)
+            ?? MappingTableCellView(frame: .zero)
         cell.identifier = identifier
-        if cell.textField == nil {
-            let textField = NSTextField(labelWithString: "")
-            textField.translatesAutoresizingMaskIntoConstraints = false
-            cell.addSubview(textField)
-            NSLayoutConstraint.activate([
-                textField.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 8),
-                textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8),
-                textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-            ])
-            cell.textField = textField
-        }
-        cell.textField?.stringValue = "\(items[row].title)\n\(items[row].detail)"
+        cell.titleLabel.stringValue = items[row].title
+        cell.detailLabel.stringValue = items[row].detail
         return cell
     }
 
@@ -634,6 +809,18 @@ final class MappingPreferencesWindowController: NSWindowController,
         selectedKind = items[row].kind
         selectedID = items[row].id
         refreshEditor()
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        let row = tableView.clickedRow
+        guard row >= 0, row < items.count else { return }
+        selectedKind = items[row].kind
+        selectedID = items[row].id
+        tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        stopCapture()
     }
 }
 
