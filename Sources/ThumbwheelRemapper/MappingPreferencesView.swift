@@ -2,27 +2,72 @@ import Combine
 import SwiftUI
 import ThumbwheelRemapperCore
 
-enum ModernMappingKind: String, CaseIterable, Identifiable {
-    case click
-    case hold
+enum ModernMappingInputKind: String, CaseIterable, Identifiable {
+    case button
     case wheel
 
     var id: String { rawValue }
 
-    var title: String {
+    var displayName: String {
         switch self {
-        case .click: return "Button click"
-        case .hold: return "Button hold"
-        case .wheel: return "Wheel"
+        case .button:
+            return "Button"
+        case .wheel:
+            return "Wheel"
+        }
+    }
+}
+
+enum ModernButtonGesture: String, CaseIterable, Identifiable {
+    case single
+    case double
+    case hold
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .single:
+            return "Single click"
+        case .double:
+            return "Double click"
+        case .hold:
+            return "Press and hold"
         }
     }
 }
 
 enum ModernMappingSelection: Hashable {
-    case click(UUID)
-    case hold(UUID)
-    case wheel(UUID)
+    case mapping(UUID)
     case about
+}
+
+enum ModernMappingRecord {
+    case click(ButtonClickMapping)
+    case hold(ButtonHoldMapping)
+    case wheel(WheelMapping)
+
+    var id: UUID {
+        switch self {
+        case let .click(mapping):
+            return mapping.id
+        case let .hold(mapping):
+            return mapping.id
+        case let .wheel(mapping):
+            return mapping.id
+        }
+    }
+
+    var isEnabled: Bool {
+        switch self {
+        case let .click(mapping):
+            return mapping.isEnabled
+        case let .hold(mapping):
+            return mapping.isEnabled
+        case let .wheel(mapping):
+            return mapping.isEnabled
+        }
+    }
 }
 
 struct ModernMappingItem: Identifiable {
@@ -31,13 +76,13 @@ struct ModernMappingItem: Identifiable {
     let title: String
     let detail: String
     let symbolName: String
+    let isEnabled: Bool
 }
 
 @MainActor
 final class ModernMappingPreferencesModel: ObservableObject {
     @Published var document: ConfigurationDocument
     @Published var selection: ModernMappingSelection?
-    @Published var newMappingKind: ModernMappingKind = .click
     @Published var validationMessage: String?
 
     private let onChange: (ConfigurationDocument, [MappingValidationIssue]) -> Void
@@ -49,11 +94,11 @@ final class ModernMappingPreferencesModel: ObservableObject {
         self.document = document
         self.onChange = onChange
         if let mapping = document.buttonClicks.first {
-            selection = .click(mapping.id)
+            selection = .mapping(mapping.id)
         } else if let mapping = document.buttonHolds.first {
-            selection = .hold(mapping.id)
+            selection = .mapping(mapping.id)
         } else if let mapping = document.wheelMappings.first {
-            selection = .wheel(mapping.id)
+            selection = .mapping(mapping.id)
         }
     }
 
@@ -61,37 +106,41 @@ final class ModernMappingPreferencesModel: ObservableObject {
         document.buttonClicks.map {
             ModernMappingItem(
                 id: "click-\($0.id.uuidString)",
-                selection: .click($0.id),
-                title: "\($0.button.displayName) \($0.click.displayName)",
+                selection: .mapping($0.id),
+                title: "\($0.button.displayName) · \($0.click.displayName) click",
                 detail: "\($0.action.direction.displayName) · \($0.label.isEmpty ? "Scroll" : $0.label)",
-                symbolName: "computermouse"
+                symbolName: "computermouse",
+                isEnabled: $0.isEnabled
             )
         } + document.buttonHolds.map {
             ModernMappingItem(
                 id: "hold-\($0.id.uuidString)",
-                selection: .hold($0.id),
-                title: "\($0.button.displayName) Hold",
+                selection: .mapping($0.id),
+                title: "\($0.button.displayName) · Press and hold",
                 detail: "\($0.action.mode.displayName) · \($0.label.isEmpty ? "Hold scroll" : $0.label)",
-                symbolName: "hand.point.up.left"
+                symbolName: "hand.point.up.left",
+                isEnabled: $0.isEnabled
             )
         } + document.wheelMappings.map {
             ModernMappingItem(
                 id: "wheel-\($0.id.uuidString)",
-                selection: .wheel($0.id),
+                selection: .mapping($0.id),
                 title: $0.label.isEmpty ? $0.source.displayName : $0.label,
                 detail: "Wheel · \($0.action.direction.displayName)",
-                symbolName: "scroll"
+                symbolName: "scroll",
+                isEnabled: $0.isEnabled
             )
         }
     }
 
     var selectedTitle: String {
-        guard let selection else { return "Mappings" }
         switch selection {
-        case .click: return "Button click"
-        case .hold: return "Button hold"
-        case .wheel: return "Thumbwheel"
-        case .about: return "About"
+        case .mapping:
+            return "Mapping"
+        case .about:
+            return "About"
+        case nil:
+            return "Mappings"
         }
     }
 
@@ -102,38 +151,39 @@ final class ModernMappingPreferencesModel: ObservableObject {
     }
 
     func addMapping() {
-        switch newMappingKind {
-        case .click:
-            guard let button = availableButtons(for: .single).first else {
-                validationMessage = "All available buttons already have a single-click mapping."
-                return
-            }
+        if let button = availableButtons(for: ModernButtonGesture.single).first {
             let mapping = ButtonClickMapping(
+                isEnabled: false,
                 button: button,
                 click: .single,
                 action: ScrollActionOptions(direction: .up)
             )
             document.buttonClicks.append(mapping)
-            selection = .click(mapping.id)
-        case .hold:
-            guard let button = availableHoldButtons.first else {
-                validationMessage = "All available buttons already have a hold mapping."
-                return
-            }
+            selection = .mapping(mapping.id)
+        } else if let button = availableButtons(for: ModernButtonGesture.double).first {
+            let mapping = ButtonClickMapping(
+                isEnabled: false,
+                button: button,
+                click: .double,
+                action: ScrollActionOptions(direction: .up)
+            )
+            document.buttonClicks.append(mapping)
+            selection = .mapping(mapping.id)
+        } else if let button = availableHoldButtons.first {
             let mapping = ButtonHoldMapping(
+                isEnabled: false,
                 button: button,
                 action: HoldActionOptions(mode: .scrollUp)
             )
             document.buttonHolds.append(mapping)
-            selection = .hold(mapping.id)
-        case .wheel:
-            guard !document.wheelMappings.contains(where: { $0.source == .horizontalThumbwheel }) else {
-                validationMessage = "A horizontal thumbwheel mapping already exists."
-                return
-            }
-            let mapping = WheelMapping()
+            selection = .mapping(mapping.id)
+        } else if !document.wheelMappings.contains(where: { $0.source == .horizontalThumbwheel }) {
+            let mapping = WheelMapping(isEnabled: false)
             document.wheelMappings.append(mapping)
-            selection = .wheel(mapping.id)
+            selection = .mapping(mapping.id)
+        } else {
+            validationMessage = "All supported input triggers already have mappings."
+            return
         }
         commit()
     }
@@ -141,12 +191,8 @@ final class ModernMappingPreferencesModel: ObservableObject {
     func removeSelection() {
         guard let selection else { return }
         switch selection {
-        case let .click(id):
-            document.buttonClicks.removeAll { $0.id == id }
-        case let .hold(id):
-            document.buttonHolds.removeAll { $0.id == id }
-        case let .wheel(id):
-            document.wheelMappings.removeAll { $0.id == id }
+        case let .mapping(id):
+            removeMapping(id)
         case .about:
             return
         }
@@ -190,18 +236,289 @@ final class ModernMappingPreferencesModel: ObservableObject {
         document.wheelMappings.first { $0.id == id }
     }
 
-    func availableButtons(for click: ButtonClickKind, excluding id: UUID? = nil) -> [InputButton] {
-        allButtons.filter { candidate in
-            !document.buttonClicks.contains {
-                $0.id != id && $0.button == candidate && $0.click == click
+    func mapping(_ id: UUID) -> ModernMappingRecord? {
+        if let mapping = click(id) {
+            return .click(mapping)
+        }
+        if let mapping = hold(id) {
+            return .hold(mapping)
+        }
+        if let mapping = wheel(id) {
+            return .wheel(mapping)
+        }
+        return nil
+    }
+
+    func isEnabled(_ id: UUID) -> Bool? {
+        mapping(id)?.isEnabled
+    }
+
+    func updateEnabled(_ id: UUID, _ isEnabled: Bool) {
+        if let index = document.buttonClicks.firstIndex(where: { $0.id == id }) {
+            document.buttonClicks[index].isEnabled = isEnabled
+            commit()
+        } else if let index = document.buttonHolds.firstIndex(where: { $0.id == id }) {
+            document.buttonHolds[index].isEnabled = isEnabled
+            commit()
+        } else if let index = document.wheelMappings.firstIndex(where: { $0.id == id }) {
+            document.wheelMappings[index].isEnabled = isEnabled
+            commit()
+        }
+    }
+
+    func inputKind(_ id: UUID) -> ModernMappingInputKind? {
+        guard let mapping = mapping(id) else { return nil }
+        switch mapping {
+        case .click, .hold:
+            return .button
+        case .wheel:
+            return .wheel
+        }
+    }
+
+    func buttonGesture(_ id: UUID) -> ModernButtonGesture? {
+        guard let mapping = mapping(id) else { return nil }
+        switch mapping {
+        case let .click(mapping):
+            return mapping.click == .single ? .single : .double
+        case .hold:
+            return .hold
+        case .wheel:
+            return nil
+        }
+    }
+
+    func button(for id: UUID) -> InputButton? {
+        guard let mapping = mapping(id) else { return nil }
+        switch mapping {
+        case let .click(mapping):
+            return mapping.button
+        case let .hold(mapping):
+            return mapping.button
+        case .wheel:
+            return nil
+        }
+    }
+
+    func wheelSource(_ id: UUID) -> WheelMappingSource? {
+        guard let mapping = wheel(id) else { return nil }
+        return mapping.source
+    }
+
+    func updateInputKind(_ id: UUID, _ inputKind: ModernMappingInputKind) {
+        guard let mapping = mapping(id) else { return }
+        switch (mapping, inputKind) {
+        case (.click, .button), (.hold, .button), (.wheel, .wheel):
+            return
+        case let (.wheel(wheel), .button):
+            guard let button = availableButtons(
+                for: ModernButtonGesture.single,
+                excluding: id
+            ).first else {
+                validationMessage = "All available buttons already have a single-click mapping."
+                return
+            }
+            replace(
+                .click(
+                    ButtonClickMapping(
+                        id: wheel.id,
+                        isEnabled: wheel.isEnabled,
+                        button: button,
+                        click: .single,
+                        action: ScrollActionOptions(direction: wheel.action.direction),
+                        label: wheel.label
+                    )
+                )
+            )
+        case (.click, .wheel), (.hold, .wheel):
+            guard !document.wheelMappings.contains(where: { $0.id != id }) else {
+                validationMessage = "A horizontal thumbwheel mapping already exists."
+                return
+            }
+            let direction: ScrollDirection
+            let label: String
+            switch mapping {
+            case let .click(click):
+                direction = click.action.direction
+                label = click.label
+            case let .hold(hold):
+                direction = hold.action.mode.direction ?? .up
+                label = hold.label
+            case .wheel:
+                return
+            }
+            replace(
+                .wheel(
+                    WheelMapping(
+                        id: id,
+                        isEnabled: mapping.isEnabled,
+                        action: WheelActionOptions(direction: direction),
+                        label: label
+                    )
+                )
+            )
+        }
+        commit()
+    }
+
+    func updateButton(_ id: UUID, _ button: InputButton) {
+        if let index = document.buttonClicks.firstIndex(where: { $0.id == id }) {
+            document.buttonClicks[index].button = button
+            commit()
+        } else if let index = document.buttonHolds.firstIndex(where: { $0.id == id }) {
+            document.buttonHolds[index].button = button
+            commit()
+        }
+    }
+
+    func updateButtonGesture(_ id: UUID, _ gesture: ModernButtonGesture) {
+        guard let mapping = mapping(id) else { return }
+        switch mapping {
+        case let .click(click):
+            switch gesture {
+            case .single, .double:
+                guard let index = document.buttonClicks.firstIndex(where: { $0.id == id }) else {
+                    return
+                }
+                document.buttonClicks[index].click = gesture == .single ? .single : .double
+            case .hold:
+                replace(
+                    .hold(
+                        ButtonHoldMapping(
+                            id: id,
+                            isEnabled: click.isEnabled,
+                            button: click.button,
+                            action: HoldActionOptions(
+                                mode: click.action.direction == .up ? .scrollUp : .scrollDown
+                            ),
+                            label: click.label
+                        )
+                    )
+                )
+            }
+        case let .hold(hold):
+            switch gesture {
+            case .hold:
+                return
+            case .single, .double:
+                replace(
+                    .click(
+                        ButtonClickMapping(
+                            id: id,
+                            isEnabled: hold.isEnabled,
+                            button: hold.button,
+                            click: gesture == .single ? .single : .double,
+                            action: ScrollActionOptions(
+                                direction: hold.action.mode.direction ?? .up
+                            ),
+                            label: hold.label
+                        )
+                    )
+                )
+            }
+        case let .wheel(wheel):
+            guard let button = availableButtons(for: gesture, excluding: id).first else {
+                validationMessage = "All available buttons already have that button gesture."
+                return
+            }
+            switch gesture {
+            case .single, .double:
+                replace(
+                    .click(
+                        ButtonClickMapping(
+                            id: id,
+                            isEnabled: wheel.isEnabled,
+                            button: button,
+                            click: gesture == .single ? .single : .double,
+                            action: ScrollActionOptions(direction: wheel.action.direction),
+                            label: wheel.label
+                        )
+                    )
+                )
+            case .hold:
+                replace(
+                    .hold(
+                        ButtonHoldMapping(
+                            id: id,
+                            isEnabled: wheel.isEnabled,
+                            button: button,
+                            action: HoldActionOptions(
+                                mode: wheel.action.direction == .up ? .scrollUp : .scrollDown
+                            ),
+                            label: wheel.label
+                        )
+                    )
+                )
             }
         }
+        commit()
+    }
+
+    func updateWheelSource(_ id: UUID, _ source: WheelMappingSource) {
+        guard let index = document.wheelMappings.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        document.wheelMappings[index].source = source
+        commit()
+    }
+
+    func availableButtons(
+        for gesture: ModernButtonGesture,
+        excluding id: UUID? = nil
+    ) -> [InputButton] {
+        allButtons.filter { candidate in
+            switch gesture {
+            case .single:
+                return !document.buttonClicks.contains {
+                    $0.id != id && $0.button == candidate && $0.click == .single
+                }
+            case .double:
+                return !document.buttonClicks.contains {
+                    $0.id != id && $0.button == candidate && $0.click == .double
+                }
+            case .hold:
+                return !document.buttonHolds.contains {
+                    $0.id != id && $0.button == candidate
+                }
+            }
+        }
+    }
+
+    func availableButtons(
+        for gesture: ModernButtonGesture,
+        excluding id: UUID? = nil,
+        including button: InputButton
+    ) -> [InputButton] {
+        var available = availableButtons(for: gesture, excluding: id)
+        if !available.contains(button) {
+            available.append(button)
+        }
+        return available
     }
 
     var availableHoldButtons: [InputButton] {
         allButtons.filter { candidate in
             !document.buttonHolds.contains { $0.button == candidate }
         }
+    }
+
+    private func replace(_ mapping: ModernMappingRecord) {
+        let id = mapping.id
+        removeMapping(id)
+        switch mapping {
+        case let .click(mapping):
+            document.buttonClicks.append(mapping)
+        case let .hold(mapping):
+            document.buttonHolds.append(mapping)
+        case let .wheel(mapping):
+            document.wheelMappings.append(mapping)
+        }
+    }
+
+    private func removeMapping(_ id: UUID) {
+        document.buttonClicks.removeAll { $0.id == id }
+        document.buttonHolds.removeAll { $0.id == id }
+        document.wheelMappings.removeAll { $0.id == id }
     }
 
     private func commit() {
@@ -234,6 +551,7 @@ struct MappingSidebarView: View {
                             .frame(width: 20)
                             .foregroundStyle(.secondary)
                     }
+                    .opacity(item.isEnabled ? 1 : 0.55)
                     .tag(item.selection)
                 }
             }
@@ -266,12 +584,8 @@ struct MappingDetailView: View {
                 ScrollView {
                     Form {
                         switch selection {
-                        case let .click(id):
-                            clickEditor(id)
-                        case let .hold(id):
-                            holdEditor(id)
-                        case let .wheel(id):
-                            wheelEditor(id)
+                        case let .mapping(id):
+                            mappingEditor(id)
                         case .about:
                             EmptyView()
                         }
@@ -332,20 +646,85 @@ struct MappingDetailView: View {
     }
 
     @ViewBuilder
-    private func clickEditor(_ id: UUID) -> some View {
-        if let mapping = model.click(id) {
-            Section("Trigger") {
-                Picker("Button", selection: clickButtonBinding(id, value: mapping.button)) {
-                    ForEach(model.availableButtons(for: mapping.click, excluding: id), id: \.self) {
-                        Text($0.displayName).tag($0)
+    private func mappingEditor(_ id: UUID) -> some View {
+        if let mapping = model.mapping(id),
+           let inputKind = model.inputKind(id) {
+            inputTriggerEditor(id, inputKind: inputKind)
+            switch mapping {
+            case .click:
+                clickActionEditor(id)
+            case .hold:
+                holdActionEditor(id)
+            case .wheel:
+                wheelActionEditor(id)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func inputTriggerEditor(
+        _ id: UUID,
+        inputKind: ModernMappingInputKind
+    ) -> some View {
+        Section("Input trigger") {
+            Picker(
+                "Input",
+                selection: mappingInputKindBinding(id, value: inputKind)
+            ) {
+                ForEach(ModernMappingInputKind.allCases) {
+                    Text($0.displayName).tag($0)
+                }
+            }
+            if let isEnabled = model.isEnabled(id) {
+                Toggle(
+                    "Enabled",
+                    isOn: mappingEnabledBinding(id, value: isEnabled)
+                )
+            }
+
+            switch inputKind {
+            case .button:
+                if let button = model.button(for: id),
+                   let gesture = model.buttonGesture(id) {
+                    Picker("Button", selection: mappingButtonBinding(id, value: button)) {
+                        ForEach(
+                            model.availableButtons(
+                                for: gesture,
+                                excluding: id,
+                                including: button
+                            ),
+                            id: \.self
+                        ) {
+                            Text($0.displayName).tag($0)
+                        }
+                    }
+                    Picker(
+                        "Gesture",
+                        selection: mappingGestureBinding(id, value: gesture)
+                    ) {
+                        ForEach(ModernButtonGesture.allCases) {
+                            Text($0.displayName).tag($0)
+                        }
                     }
                 }
-                Picker("Gesture", selection: clickKindBinding(id, value: mapping.click)) {
-                    ForEach(ButtonClickKind.allCases) {
-                        Text($0.displayName).tag($0)
+            case .wheel:
+                if let source = model.wheelSource(id) {
+                    Picker(
+                        "Source",
+                        selection: mappingWheelSourceBinding(id, value: source)
+                    ) {
+                        ForEach(WheelMappingSource.allCases) {
+                            Text($0.displayName).tag($0)
+                        }
                     }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func clickActionEditor(_ id: UUID) -> some View {
+        if let mapping = model.click(id) {
             Section("Action") {
                 Picker("Direction", selection: clickDirectionBinding(id, value: mapping.action.direction)) {
                     ForEach(ScrollDirection.allCases, id: \.rawValue) {
@@ -388,15 +767,8 @@ struct MappingDetailView: View {
     }
 
     @ViewBuilder
-    private func holdEditor(_ id: UUID) -> some View {
+    private func holdActionEditor(_ id: UUID) -> some View {
         if let mapping = model.hold(id) {
-            Section("Trigger") {
-                Picker("Button", selection: holdButtonBinding(id, value: mapping.button)) {
-                    ForEach(model.availableHoldButtons + [mapping.button], id: \.self) {
-                        Text($0.displayName).tag($0)
-                    }
-                }
-            }
             Section("Action") {
                 Picker("Mode", selection: holdModeBinding(id, value: mapping.action.mode)) {
                     ForEach(HoldScrollMode.allCases) {
@@ -464,10 +836,9 @@ struct MappingDetailView: View {
     }
 
     @ViewBuilder
-    private func wheelEditor(_ id: UUID) -> some View {
+    private func wheelActionEditor(_ id: UUID) -> some View {
         if let mapping = model.wheel(id) {
-            Section("Input") {
-                LabeledContent("Source", value: mapping.source.displayName)
+            Section("Action") {
                 Picker("Input shape", selection: wheelShapeBinding(id, value: mapping.action.inputShape)) {
                     Text("Horizontal only").tag(WheelInputShape.horizontalOnly)
                     Text("Any horizontal movement").tag(WheelInputShape.anyHorizontal)
@@ -515,17 +886,53 @@ struct MappingDetailView: View {
         }
     }
 
-    private func clickButtonBinding(_ id: UUID, value: InputButton) -> Binding<InputButton> {
+    private func mappingInputKindBinding(
+        _ id: UUID,
+        value: ModernMappingInputKind
+    ) -> Binding<ModernMappingInputKind> {
         Binding(
-            get: { model.click(id)?.button ?? value },
-            set: { newValue in model.updateClick(id) { $0.button = newValue } }
+            get: { model.inputKind(id) ?? value },
+            set: { newValue in model.updateInputKind(id, newValue) }
         )
     }
 
-    private func clickKindBinding(_ id: UUID, value: ButtonClickKind) -> Binding<ButtonClickKind> {
+    private func mappingButtonBinding(
+        _ id: UUID,
+        value: InputButton
+    ) -> Binding<InputButton> {
         Binding(
-            get: { model.click(id)?.click ?? value },
-            set: { newValue in model.updateClick(id) { $0.click = newValue } }
+            get: { model.button(for: id) ?? value },
+            set: { newValue in model.updateButton(id, newValue) }
+        )
+    }
+
+    private func mappingEnabledBinding(
+        _ id: UUID,
+        value: Bool
+    ) -> Binding<Bool> {
+        Binding(
+            get: { model.isEnabled(id) ?? value },
+            set: { newValue in model.updateEnabled(id, newValue) }
+        )
+    }
+
+    private func mappingGestureBinding(
+        _ id: UUID,
+        value: ModernButtonGesture
+    ) -> Binding<ModernButtonGesture> {
+        Binding(
+            get: { model.buttonGesture(id) ?? value },
+            set: { newValue in model.updateButtonGesture(id, newValue) }
+        )
+    }
+
+    private func mappingWheelSourceBinding(
+        _ id: UUID,
+        value: WheelMappingSource
+    ) -> Binding<WheelMappingSource> {
+        Binding(
+            get: { model.wheelSource(id) ?? value },
+            set: { newValue in model.updateWheelSource(id, newValue) }
         )
     }
 
@@ -591,13 +998,6 @@ struct MappingDetailView: View {
                 guard newValue >= 0 else { return }
                 model.updateClick(id) { $0.action.duration = newValue }
             }
-        )
-    }
-
-    private func holdButtonBinding(_ id: UUID, value: InputButton) -> Binding<InputButton> {
-        Binding(
-            get: { model.hold(id)?.button ?? value },
-            set: { newValue in model.updateHold(id) { $0.button = newValue } }
         )
     }
 

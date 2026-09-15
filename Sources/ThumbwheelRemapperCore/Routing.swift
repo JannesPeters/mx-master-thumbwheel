@@ -279,16 +279,23 @@ public struct EventRouter {
             return .reenableEventTap
         case let .buttonDown(button):
             let inputButton = button.inputButton
-            let hasMapping = document.buttonClicks.contains { $0.button == inputButton }
-                || document.buttonHolds.contains { $0.button == inputButton }
+            let hasMapping = document.buttonClicks.contains {
+                $0.isEnabled && $0.button == inputButton
+            } || document.buttonHolds.contains {
+                $0.isEnabled && $0.button == inputButton
+            }
             return hasMapping ? .consume : .forward
         case let .buttonUp(button):
             let inputButton = button.inputButton
-            let hasMapping = document.buttonClicks.contains { $0.button == inputButton }
-                || document.buttonHolds.contains { $0.button == inputButton }
+            let hasMapping = document.buttonClicks.contains {
+                $0.isEnabled && $0.button == inputButton
+            } || document.buttonHolds.contains {
+                $0.isEnabled && $0.button == inputButton
+            }
             return hasMapping ? .consume : .forward
         case let .wheel(event):
             guard let mapping = document.wheelMappings.first(where: {
+                guard $0.isEnabled else { return false }
                 switch $0.source {
                 case .horizontalThumbwheel:
                     return WheelSourceDetector.matches(
@@ -311,7 +318,7 @@ public struct EventRouter {
 
     public func route(click: ButtonClickKind, for button: InputButton) -> RouteDecision {
         guard let mapping = document.buttonClicks.first(where: {
-            $0.button == button && $0.click == click
+            $0.isEnabled && $0.button == button && $0.click == click
         }) else {
             return .forward
         }
@@ -319,7 +326,9 @@ public struct EventRouter {
     }
 
     public func routeHold(for button: InputButton) -> RouteDecision {
-        guard let mapping = document.buttonHolds.first(where: { $0.button == button }) else {
+        guard let mapping = document.buttonHolds.first(where: {
+            $0.isEnabled && $0.button == button
+        }) else {
             return .forward
         }
         return .mapped(.hold(mapping))

@@ -400,6 +400,7 @@ public enum WheelMappingSource: String, Codable, CaseIterable, Equatable, Identi
 
 public struct ButtonClickMapping: Codable, Equatable, Identifiable {
     public var id: UUID
+    public var isEnabled: Bool
     public var button: InputButton
     public var click: ButtonClickKind
     public var action: ScrollActionOptions
@@ -407,54 +408,143 @@ public struct ButtonClickMapping: Codable, Equatable, Identifiable {
 
     public init(
         id: UUID = UUID(),
+        isEnabled: Bool = true,
         button: InputButton,
         click: ButtonClickKind = .single,
         action: ScrollActionOptions,
         label: String = ""
     ) {
         self.id = id
+        self.isEnabled = isEnabled
         self.button = button
         self.click = click
         self.action = action
         self.label = label
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case isEnabled
+        case button
+        case click
+        case action
+        case label
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
+        button = try container.decode(InputButton.self, forKey: .button)
+        click = try container.decode(ButtonClickKind.self, forKey: .click)
+        action = try container.decode(ScrollActionOptions.self, forKey: .action)
+        label = try container.decode(String.self, forKey: .label)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(isEnabled, forKey: .isEnabled)
+        try container.encode(button, forKey: .button)
+        try container.encode(click, forKey: .click)
+        try container.encode(action, forKey: .action)
+        try container.encode(label, forKey: .label)
+    }
 }
 
 public struct ButtonHoldMapping: Codable, Equatable, Identifiable {
     public var id: UUID
+    public var isEnabled: Bool
     public var button: InputButton
     public var action: HoldActionOptions
     public var label: String
 
     public init(
         id: UUID = UUID(),
+        isEnabled: Bool = true,
         button: InputButton,
         action: HoldActionOptions,
         label: String = ""
     ) {
         self.id = id
+        self.isEnabled = isEnabled
         self.button = button
         self.action = action
         self.label = label
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case isEnabled
+        case button
+        case action
+        case label
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
+        button = try container.decode(InputButton.self, forKey: .button)
+        action = try container.decode(HoldActionOptions.self, forKey: .action)
+        label = try container.decode(String.self, forKey: .label)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(isEnabled, forKey: .isEnabled)
+        try container.encode(button, forKey: .button)
+        try container.encode(action, forKey: .action)
+        try container.encode(label, forKey: .label)
     }
 }
 
 public struct WheelMapping: Codable, Equatable, Identifiable {
     public var id: UUID
+    public var isEnabled: Bool
     public var source: WheelMappingSource
     public var action: WheelActionOptions
     public var label: String
 
     public init(
         id: UUID = UUID(),
+        isEnabled: Bool = true,
         source: WheelMappingSource = .horizontalThumbwheel,
         action: WheelActionOptions = WheelActionOptions(),
         label: String = ""
     ) {
         self.id = id
+        self.isEnabled = isEnabled
         self.source = source
         self.action = action
         self.label = label
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case isEnabled
+        case source
+        case action
+        case label
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
+        source = try container.decode(WheelMappingSource.self, forKey: .source)
+        action = try container.decode(WheelActionOptions.self, forKey: .action)
+        label = try container.decode(String.self, forKey: .label)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(isEnabled, forKey: .isEnabled)
+        try container.encode(source, forKey: .source)
+        try container.encode(action, forKey: .action)
+        try container.encode(label, forKey: .label)
     }
 }
 

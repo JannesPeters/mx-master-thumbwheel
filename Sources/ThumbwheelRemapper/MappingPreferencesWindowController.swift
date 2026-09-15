@@ -101,7 +101,7 @@ final class MappingPreferencesWindowController: NSWindowController, NSToolbarDel
         isHiddenForJoystick = false
         guard shouldRestoreAfterJoystick else { return }
         shouldRestoreAfterJoystick = false
-        show()
+        window?.orderBack(nil)
     }
 
     func show() {
@@ -156,14 +156,15 @@ final class MappingPreferencesWindowController: NSWindowController, NSToolbarDel
             )
 
         case .addMapping:
-            let item = NSMenuToolbarItem(itemIdentifier: itemIdentifier)
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
             item.label = "Add Mapping"
             item.toolTip = "Add a mapping"
             item.image = NSImage(
                 systemSymbolName: "plus",
                 accessibilityDescription: "Add mapping"
             )
-            item.menu = makeAddMenu()
+            item.target = self
+            item.action = #selector(addMapping)
             return item
 
         case .removeMapping:
@@ -185,27 +186,7 @@ final class MappingPreferencesWindowController: NSWindowController, NSToolbarDel
         }
     }
 
-    private func makeAddMenu() -> NSMenu {
-        let menu = NSMenu()
-        for kind in ModernMappingKind.allCases {
-            let item = NSMenuItem(
-                title: kind.title,
-                action: #selector(addMapping(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.representedObject = kind.rawValue
-            menu.addItem(item)
-        }
-        return menu
-    }
-
-    @objc private func addMapping(_ sender: NSMenuItem) {
-        guard let rawValue = sender.representedObject as? String,
-              let kind = ModernMappingKind(rawValue: rawValue) else {
-            return
-        }
-        model.newMappingKind = kind
+    @objc private func addMapping() {
         model.addMapping()
     }
 

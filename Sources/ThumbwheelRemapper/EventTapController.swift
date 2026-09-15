@@ -71,7 +71,9 @@ final class EventTapController {
         router.document = document
 
         if let activeButton,
-           !document.buttonHolds.contains(where: { $0.button == activeButton }) {
+           !document.buttonHolds.contains(where: {
+               $0.isEnabled && $0.button == activeButton
+           }) {
             stopHold(released: false)
         }
     }
@@ -146,12 +148,14 @@ final class EventTapController {
 
         activeButton = button
         let hasSingle = document.buttonClicks.contains {
-            $0.button == button && $0.click == .single
+            $0.isEnabled && $0.button == button && $0.click == .single
         }
         let hasDouble = document.buttonClicks.contains {
-            $0.button == button && $0.click == .double
+            $0.isEnabled && $0.button == button && $0.click == .double
         }
-        let hasHold = document.buttonHolds.contains { $0.button == button }
+        let hasHold = document.buttonHolds.contains {
+            $0.isEnabled && $0.button == button
+        }
         let outputs = gestureRecognizer.buttonDown(
             button,
             at: ProcessInfo.processInfo.systemUptime,
@@ -256,18 +260,20 @@ final class EventTapController {
             switch output {
             case let .single(button):
                 guard let mapping = document.buttonClicks.first(where: {
-                    $0.button == button && $0.click == .single
+                    $0.isEnabled && $0.button == button && $0.click == .single
                 }) else { continue }
                 startClick(mapping.action)
 
             case let .double(button):
                 guard let mapping = document.buttonClicks.first(where: {
-                    $0.button == button && $0.click == .double
+                    $0.isEnabled && $0.button == button && $0.click == .double
                 }) else { continue }
                 startClick(mapping.action)
 
             case let .hold(button):
-                guard let mapping = document.buttonHolds.first(where: { $0.button == button }) else {
+                guard let mapping = document.buttonHolds.first(where: {
+                    $0.isEnabled && $0.button == button
+                }) else {
                     continue
                 }
                 startHold(mapping)
