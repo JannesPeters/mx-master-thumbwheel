@@ -100,6 +100,21 @@ public struct DragScrollMomentumEngine: Equatable {
     }
 }
 
+public enum DragScrollMath {
+    public static func multiplier(
+        base: Double,
+        distance: Double,
+        distanceAccelerationEnabled: Bool,
+        distanceGain: Double
+    ) -> Double {
+        let base = min(max(base, 0), 4)
+        guard distanceAccelerationEnabled else { return base }
+        let normalizedDistance = max(distance, 0) / 100
+        let gain = max(distanceGain, 0)
+        return min(base + (normalizedDistance * gain), 4)
+    }
+}
+
 public struct JoystickDisplacement1D: Equatable {
     private var anchor: Double?
 

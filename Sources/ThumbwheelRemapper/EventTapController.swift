@@ -27,6 +27,8 @@ final class EventTapController {
     private var holdLastFrameAt: TimeInterval?
     private var holdVerticalVelocity = 0.0
     private var holdHorizontalVelocity = 0.0
+    private var dragScrollLastMotionAt: TimeInterval?
+    private var dragScrollDistanceTravelled = 0.0
     private var verticalMomentumEngine = DragScrollMomentumEngine()
     private var horizontalMomentumEngine = DragScrollMomentumEngine()
     private var joystickDisplacement = JoystickDisplacement2D()
@@ -42,15 +44,16 @@ final class EventTapController {
 
     private let joystickProfile = JoystickSpeedProfile()
     private let joystickHUD = JoystickHUDController()
-    private let onJoystickActivityChanged: (Bool) -> Void
+    private let onCursorCaptureActivityChanged: (Bool) -> Void
+    private let dragScrollVelocityStaleInterval: TimeInterval = 0.12
 
     init(
         document: ConfigurationDocument,
-        onJoystickActivityChanged: @escaping (Bool) -> Void = { _ in }
+        onCursorCaptureActivityChanged: @escaping (Bool) -> Void = { _ in }
     ) {
         self.document = document
         self.router = EventRouter(document: document)
-        self.onJoystickActivityChanged = onJoystickActivityChanged
+        self.onCursorCaptureActivityChanged = onCursorCaptureActivityChanged
         self.gestureRecognizer = ButtonGestureRecognizer(
             timing: GestureTimingPolicy(
                 doubleClickInterval: NSEvent.doubleClickInterval,
@@ -201,21 +204,34 @@ final class EventTapController {
     }
 
     private func processPointerMotion(_ event: CGEvent) -> Unmanaged<CGEvent>? {
-        guard let activeHold,
-              activeHold.action.mode == .joystick else {
+        guard let activeHold else {
             return Unmanaged.passUnretained(event)
         }
 
+        switch activeHold.action.mode {
+        case .joystick:
+            return processJoystickPointerMotion(event, mapping: activeHold)
+        case .dragScroll:
+            return processDragScrollPointerMotion(event, mapping: activeHold)
+        case .scrollUp, .scrollDown:
+            return Unmanaged.passUnretained(event)
+        }
+    }
+
+    private func processJoystickPointerMotion(
+        _ event: CGEvent,
+        mapping: ButtonHoldMapping
+    ) -> Unmanaged<CGEvent>? {
         joystickPointer.x += event.getDoubleValueField(.mouseEventDeltaX)
         joystickPointer.y -= event.getDoubleValueField(.mouseEventDeltaY)
         let displacement = joystickDisplacement.update(pointer: joystickPointer)
-        joystickVerticalSpeed = activeHold.action.joystickVerticalEnabled
+        joystickVerticalSpeed = mapping.action.joystickVerticalEnabled
             ? joystickVerticalIntent.multiplier(
                 for: displacement.y,
                 profile: joystickProfile
             )
             : 0
-        joystickHorizontalSpeed = activeHold.action.joystickHorizontalEnabled
+        joystickHorizontalSpeed = mapping.action.joystickHorizontalEnabled
             ? joystickHorizontalIntent.multiplier(
                 for: displacement.x,
                 profile: joystickProfile
@@ -224,6 +240,50 @@ final class EventTapController {
         joystickHUD.update(
             verticalSpeedMultiplier: joystickVerticalSpeed,
             horizontalSpeedMultiplier: joystickHorizontalSpeed
+        )
+        return nil
+    }
+
+    private func processDragScrollPointerMotion(
+        _ event: CGEvent,
+        mapping: ButtonHoldMapping
+    ) -> Unmanaged<CGEvent>? {
+        let verticalEnabled = mapping.action.dragScrollVerticalEnabled
+        let horizontalEnabled = mapping.action.dragScrollHorizontalEnabled
+        guard verticalEnabled || horizontalEnabled else {
+            return Unmanaged.passUnretained(event)
+        }
+
+        let now = ProcessInfo.processInfo.systemUptime
+        let deltaTime = max(
+            now - (dragScrollLastMotionAt ?? now),
+            1.0 / 240.0
+        )
+        dragScrollLastMotionAt = now
+
+        let rawHorizontalDelta = horizontalEnabled
+            ? event.getDoubleValueField(.mouseEventDeltaX)
+            : 0
+        let rawVerticalDelta = verticalEnabled
+            ? event.getDoubleValueField(.mouseEventDeltaY)
+            : 0
+        let multiplier = DragScrollMath.multiplier(
+            base: mapping.action.dragScrollMultiplier,
+            distance: dragScrollDistanceTravelled,
+            distanceAccelerationEnabled: mapping.action.dragScrollDistanceAccelerationEnabled,
+            distanceGain: mapping.action.dragScrollDistanceGain
+        )
+        let horizontalDelta = rawHorizontalDelta * multiplier
+        let verticalDelta = rawVerticalDelta * multiplier
+        dragScrollDistanceTravelled += sqrt(
+            (rawHorizontalDelta * rawHorizontalDelta)
+                + (rawVerticalDelta * rawVerticalDelta)
+        )
+        holdHorizontalVelocity = horizontalDelta / deltaTime
+        holdVerticalVelocity = verticalDelta / deltaTime
+        postAccumulatedScroll(
+            vertical: verticalDelta,
+            horizontal: horizontalDelta
         )
         return nil
     }
@@ -389,6 +449,8 @@ final class EventTapController {
         holdLastFrameAt = holdStartedAt
         holdVerticalVelocity = 0
         holdHorizontalVelocity = 0
+        dragScrollLastMotionAt = holdStartedAt
+        dragScrollDistanceTravelled = 0
         joystickDisplacement.reset()
         joystickPointer = .zero
         _ = joystickDisplacement.update(pointer: joystickPointer)
@@ -407,9 +469,13 @@ final class EventTapController {
             let cursorLocation = NSEvent.mouseLocation
             if mapping.action.joystickCapturesCursor {
                 captureCursor()
-                onJoystickActivityChanged(true)
+                onCursorCaptureActivityChanged(true)
             }
             joystickHUD.show(at: cursorLocation)
+        } else if mapping.action.mode == .dragScroll,
+                  mapping.action.dragScrollCapturesCursor {
+            captureCursor()
+            onCursorCaptureActivityChanged(true)
         }
 
         holdTimer?.invalidate()
@@ -422,20 +488,46 @@ final class EventTapController {
 
     private func stopHold(released: Bool) {
         guard let mapping = activeHold else { return }
-        let wasCursorCaptureEnabled = mapping.action.mode == .joystick
-            && mapping.action.joystickCapturesCursor
+        let now = ProcessInfo.processInfo.systemUptime
+        let wasCursorCaptureEnabled: Bool
+        switch mapping.action.mode {
+        case .joystick:
+            wasCursorCaptureEnabled = mapping.action.joystickCapturesCursor
+        case .dragScroll:
+            wasCursorCaptureEnabled = mapping.action.dragScrollCapturesCursor
+        case .scrollUp, .scrollDown:
+            wasCursorCaptureEnabled = false
+        }
+        let hasRecentDragMotion = mapping.action.mode != .dragScroll
+            || (dragScrollLastMotionAt.map {
+                now - $0 <= dragScrollVelocityStaleInterval
+            } ?? false)
         activeHold = nil
         joystickHUD.hide()
         releaseCursor()
         if wasCursorCaptureEnabled {
-            onJoystickActivityChanged(false)
+            onCursorCaptureActivityChanged(false)
         }
-        if released,
-           mapping.action.easingEnabled,
-           max(abs(holdVerticalVelocity), abs(holdHorizontalVelocity)) > 0.01,
-           mapping.action.releaseDuration > 0 {
-            verticalMomentumEngine.setVelocity(holdVerticalVelocity)
-            horizontalMomentumEngine.setVelocity(holdHorizontalVelocity)
+        let shouldReleaseMomentum: Bool
+        if mapping.action.mode == .dragScroll {
+            shouldReleaseMomentum = released
+                && mapping.action.dragScrollInertiaEnabled
+                && hasRecentDragMotion
+                && mapping.action.dragScrollInertiaAmount > 0
+                && max(abs(holdVerticalVelocity), abs(holdHorizontalVelocity)) > 0.01
+                && mapping.action.releaseDuration > 0
+        } else {
+            shouldReleaseMomentum = released
+                && mapping.action.easingEnabled
+                && max(abs(holdVerticalVelocity), abs(holdHorizontalVelocity)) > 0.01
+                && mapping.action.releaseDuration > 0
+        }
+        if shouldReleaseMomentum {
+            let velocityMultiplier = mapping.action.mode == .dragScroll
+                ? mapping.action.dragScrollInertiaAmount
+                : 1
+            verticalMomentumEngine.setVelocity(holdVerticalVelocity * velocityMultiplier)
+            horizontalMomentumEngine.setVelocity(holdHorizontalVelocity * velocityMultiplier)
             verticalMomentumEngine.release()
             horizontalMomentumEngine.release()
         } else {
@@ -444,6 +536,8 @@ final class EventTapController {
         }
         holdStartedAt = nil
         holdLastFrameAt = nil
+        dragScrollLastMotionAt = nil
+        dragScrollDistanceTravelled = 0
     }
 
     private func tickHold() {
@@ -486,6 +580,13 @@ final class EventTapController {
             horizontalMultiplier = mapping.action.joystickHorizontalEnabled
                 ? joystickHorizontalSpeed
                 : 0
+        case .dragScroll:
+            if let lastMotionAt = dragScrollLastMotionAt,
+               now - lastMotionAt > dragScrollVelocityStaleInterval {
+                holdVerticalVelocity = 0
+                holdHorizontalVelocity = 0
+            }
+            return
         }
         holdVerticalVelocity = mapping.action.pointsPerSecond * acceleration * verticalMultiplier
         holdHorizontalVelocity = mapping.action.pointsPerSecond * acceleration * horizontalMultiplier

@@ -100,6 +100,7 @@ public enum HoldScrollMode: String, Codable, CaseIterable, Equatable, Identifiab
     case scrollUp
     case scrollDown
     case joystick
+    case dragScroll
 
     public var id: String { rawValue }
 
@@ -111,6 +112,8 @@ public enum HoldScrollMode: String, Codable, CaseIterable, Equatable, Identifiab
             return "Scroll down"
         case .joystick:
             return "Joystick"
+        case .dragScroll:
+            return "Drag scroll"
         }
     }
 
@@ -121,6 +124,8 @@ public enum HoldScrollMode: String, Codable, CaseIterable, Equatable, Identifiab
         case .scrollDown:
             return .down
         case .joystick:
+            return nil
+        case .dragScroll:
             return nil
         }
     }
@@ -257,6 +262,14 @@ public struct HoldActionOptions: Codable, Equatable {
     public var joystickVerticalEnabled: Bool
     public var joystickHorizontalEnabled: Bool
     public var joystickCapturesCursor: Bool
+    public var dragScrollVerticalEnabled: Bool
+    public var dragScrollHorizontalEnabled: Bool
+    public var dragScrollMultiplier: Double
+    public var dragScrollCapturesCursor: Bool
+    public var dragScrollDistanceAccelerationEnabled: Bool
+    public var dragScrollDistanceGain: Double
+    public var dragScrollInertiaEnabled: Bool
+    public var dragScrollInertiaAmount: Double
     public var easingEnabled: Bool
 
     public init(
@@ -267,6 +280,14 @@ public struct HoldActionOptions: Codable, Equatable {
         joystickVerticalEnabled: Bool = true,
         joystickHorizontalEnabled: Bool = false,
         joystickCapturesCursor: Bool = true,
+        dragScrollVerticalEnabled: Bool = true,
+        dragScrollHorizontalEnabled: Bool = true,
+        dragScrollMultiplier: Double = 1,
+        dragScrollCapturesCursor: Bool = false,
+        dragScrollDistanceAccelerationEnabled: Bool = false,
+        dragScrollDistanceGain: Double = 1,
+        dragScrollInertiaEnabled: Bool = true,
+        dragScrollInertiaAmount: Double = 1,
         easingEnabled: Bool = true
     ) {
         self.mode = mode
@@ -276,6 +297,14 @@ public struct HoldActionOptions: Codable, Equatable {
         self.joystickVerticalEnabled = joystickVerticalEnabled
         self.joystickHorizontalEnabled = joystickHorizontalEnabled
         self.joystickCapturesCursor = joystickCapturesCursor
+        self.dragScrollVerticalEnabled = dragScrollVerticalEnabled
+        self.dragScrollHorizontalEnabled = dragScrollHorizontalEnabled
+        self.dragScrollMultiplier = dragScrollMultiplier
+        self.dragScrollCapturesCursor = dragScrollCapturesCursor
+        self.dragScrollDistanceAccelerationEnabled = dragScrollDistanceAccelerationEnabled
+        self.dragScrollDistanceGain = dragScrollDistanceGain
+        self.dragScrollInertiaEnabled = dragScrollInertiaEnabled
+        self.dragScrollInertiaAmount = dragScrollInertiaAmount
         self.easingEnabled = easingEnabled
     }
 
@@ -329,6 +358,14 @@ public struct HoldActionOptions: Codable, Equatable {
         case joystickVerticalEnabled
         case joystickHorizontalEnabled
         case joystickCapturesCursor
+        case dragScrollVerticalEnabled
+        case dragScrollHorizontalEnabled
+        case dragScrollMultiplier
+        case dragScrollCapturesCursor
+        case dragScrollDistanceAccelerationEnabled
+        case dragScrollDistanceGain
+        case dragScrollInertiaEnabled
+        case dragScrollInertiaAmount
         case joystickEnabled
         case easingEnabled
     }
@@ -347,6 +384,14 @@ public struct HoldActionOptions: Codable, Equatable {
         joystickVerticalEnabled = try container.decodeIfPresent(Bool.self, forKey: .joystickVerticalEnabled) ?? true
         joystickHorizontalEnabled = try container.decodeIfPresent(Bool.self, forKey: .joystickHorizontalEnabled) ?? false
         joystickCapturesCursor = try container.decodeIfPresent(Bool.self, forKey: .joystickCapturesCursor) ?? true
+        dragScrollVerticalEnabled = try container.decodeIfPresent(Bool.self, forKey: .dragScrollVerticalEnabled) ?? true
+        dragScrollHorizontalEnabled = try container.decodeIfPresent(Bool.self, forKey: .dragScrollHorizontalEnabled) ?? true
+        dragScrollMultiplier = try container.decodeIfPresent(Double.self, forKey: .dragScrollMultiplier) ?? 1
+        dragScrollCapturesCursor = try container.decodeIfPresent(Bool.self, forKey: .dragScrollCapturesCursor) ?? false
+        dragScrollDistanceAccelerationEnabled = try container.decodeIfPresent(Bool.self, forKey: .dragScrollDistanceAccelerationEnabled) ?? false
+        dragScrollDistanceGain = try container.decodeIfPresent(Double.self, forKey: .dragScrollDistanceGain) ?? 1
+        dragScrollInertiaEnabled = try container.decodeIfPresent(Bool.self, forKey: .dragScrollInertiaEnabled) ?? true
+        dragScrollInertiaAmount = try container.decodeIfPresent(Double.self, forKey: .dragScrollInertiaAmount) ?? 1
         easingEnabled = try container.decodeIfPresent(Bool.self, forKey: .easingEnabled) ?? true
     }
 
@@ -360,6 +405,14 @@ public struct HoldActionOptions: Codable, Equatable {
         try container.encode(joystickVerticalEnabled, forKey: .joystickVerticalEnabled)
         try container.encode(joystickHorizontalEnabled, forKey: .joystickHorizontalEnabled)
         try container.encode(joystickCapturesCursor, forKey: .joystickCapturesCursor)
+        try container.encode(dragScrollVerticalEnabled, forKey: .dragScrollVerticalEnabled)
+        try container.encode(dragScrollHorizontalEnabled, forKey: .dragScrollHorizontalEnabled)
+        try container.encode(dragScrollMultiplier, forKey: .dragScrollMultiplier)
+        try container.encode(dragScrollCapturesCursor, forKey: .dragScrollCapturesCursor)
+        try container.encode(dragScrollDistanceAccelerationEnabled, forKey: .dragScrollDistanceAccelerationEnabled)
+        try container.encode(dragScrollDistanceGain, forKey: .dragScrollDistanceGain)
+        try container.encode(dragScrollInertiaEnabled, forKey: .dragScrollInertiaEnabled)
+        try container.encode(dragScrollInertiaAmount, forKey: .dragScrollInertiaAmount)
         try container.encode(mode == .joystick, forKey: .joystickEnabled)
         try container.encode(easingEnabled, forKey: .easingEnabled)
     }
