@@ -33,11 +33,13 @@ final class ConfigurationTests: XCTestCase {
         let defaults = HoldActionOptions(mode: .joystick)
         XCTAssertTrue(defaults.joystickVerticalEnabled)
         XCTAssertFalse(defaults.joystickHorizontalEnabled)
+        XCTAssertTrue(defaults.joystickCapturesCursor)
 
         let configured = HoldActionOptions(
             mode: .joystick,
             joystickVerticalEnabled: false,
-            joystickHorizontalEnabled: true
+            joystickHorizontalEnabled: true,
+            joystickCapturesCursor: false
         )
         let data = try JSONEncoder().encode(configured)
         let decoded = try JSONDecoder().decode(HoldActionOptions.self, from: data)
@@ -155,6 +157,7 @@ final class ConfigurationTests: XCTestCase {
         XCTAssertEqual(hold.mode, .joystick)
         XCTAssertTrue(hold.joystickVerticalEnabled)
         XCTAssertFalse(hold.joystickHorizontalEnabled)
+        XCTAssertTrue(hold.joystickCapturesCursor)
     }
 }
 
@@ -342,6 +345,24 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(profile.multiplier(for: 0, centeredMode: true), 0)
         XCTAssertGreaterThan(profile.multiplier(for: 300, centeredMode: true), 0)
         XCTAssertLessThan(profile.multiplier(for: -300, centeredMode: true), 0)
+    }
+
+    func testJoystickIntentStartsAtTheRequestedPauseZoneEdge() {
+        let profile = JoystickSpeedProfile()
+        var positiveIntent = JoystickIntentAxis()
+
+        XCTAssertEqual(positiveIntent.multiplier(for: 0, profile: profile), 0)
+        XCTAssertGreaterThan(positiveIntent.multiplier(for: 1, profile: profile), 0)
+        XCTAssertEqual(positiveIntent.multiplier(for: -79, profile: profile), 0)
+        XCTAssertLessThan(positiveIntent.multiplier(for: -81, profile: profile), 0)
+
+        var negativeIntent = JoystickIntentAxis()
+        XCTAssertLessThan(negativeIntent.multiplier(for: -1, profile: profile), 0)
+        XCTAssertEqual(negativeIntent.multiplier(for: 79, profile: profile), 0)
+        XCTAssertGreaterThan(negativeIntent.multiplier(for: 81, profile: profile), 0)
+
+        positiveIntent.reset()
+        XCTAssertLessThan(positiveIntent.multiplier(for: -1, profile: profile), 0)
     }
 }
 

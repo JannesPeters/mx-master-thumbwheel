@@ -256,6 +256,7 @@ public struct HoldActionOptions: Codable, Equatable {
     public var releaseDuration: TimeInterval
     public var joystickVerticalEnabled: Bool
     public var joystickHorizontalEnabled: Bool
+    public var joystickCapturesCursor: Bool
     public var easingEnabled: Bool
 
     public init(
@@ -265,6 +266,7 @@ public struct HoldActionOptions: Codable, Equatable {
         releaseDuration: TimeInterval = 0.14,
         joystickVerticalEnabled: Bool = true,
         joystickHorizontalEnabled: Bool = false,
+        joystickCapturesCursor: Bool = true,
         easingEnabled: Bool = true
     ) {
         self.mode = mode
@@ -273,6 +275,7 @@ public struct HoldActionOptions: Codable, Equatable {
         self.releaseDuration = releaseDuration
         self.joystickVerticalEnabled = joystickVerticalEnabled
         self.joystickHorizontalEnabled = joystickHorizontalEnabled
+        self.joystickCapturesCursor = joystickCapturesCursor
         self.easingEnabled = easingEnabled
     }
 
@@ -294,6 +297,7 @@ public struct HoldActionOptions: Codable, Equatable {
             releaseDuration: releaseDuration,
             joystickVerticalEnabled: true,
             joystickHorizontalEnabled: false,
+            joystickCapturesCursor: true,
             easingEnabled: easingEnabled
         )
     }
@@ -324,6 +328,7 @@ public struct HoldActionOptions: Codable, Equatable {
         case releaseDuration
         case joystickVerticalEnabled
         case joystickHorizontalEnabled
+        case joystickCapturesCursor
         case joystickEnabled
         case easingEnabled
     }
@@ -341,6 +346,7 @@ public struct HoldActionOptions: Codable, Equatable {
         releaseDuration = try container.decode(TimeInterval.self, forKey: .releaseDuration)
         joystickVerticalEnabled = try container.decodeIfPresent(Bool.self, forKey: .joystickVerticalEnabled) ?? true
         joystickHorizontalEnabled = try container.decodeIfPresent(Bool.self, forKey: .joystickHorizontalEnabled) ?? false
+        joystickCapturesCursor = try container.decodeIfPresent(Bool.self, forKey: .joystickCapturesCursor) ?? true
         easingEnabled = try container.decodeIfPresent(Bool.self, forKey: .easingEnabled) ?? true
     }
 
@@ -353,6 +359,7 @@ public struct HoldActionOptions: Codable, Equatable {
         try container.encode(releaseDuration, forKey: .releaseDuration)
         try container.encode(joystickVerticalEnabled, forKey: .joystickVerticalEnabled)
         try container.encode(joystickHorizontalEnabled, forKey: .joystickHorizontalEnabled)
+        try container.encode(joystickCapturesCursor, forKey: .joystickCapturesCursor)
         try container.encode(mode == .joystick, forKey: .joystickEnabled)
         try container.encode(easingEnabled, forKey: .easingEnabled)
     }

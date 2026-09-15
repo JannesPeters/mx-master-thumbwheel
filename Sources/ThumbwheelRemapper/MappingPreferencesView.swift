@@ -431,6 +431,16 @@ struct MappingDetailView: View {
                             value: mapping.action.joystickHorizontalEnabled
                         )
                     )
+                    Toggle(
+                        "Capture and hide cursor",
+                        isOn: holdJoystickCursorBinding(
+                            id,
+                            value: mapping.action.joystickCapturesCursor
+                        )
+                    )
+                    Text("Temporarily activates Thumbwheel Remapper while the joystick is held, then returns to the previous app.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 Toggle(
                     "Ease acceleration and deceleration",
@@ -656,6 +666,13 @@ struct MappingDetailView: View {
         Binding(
             get: { model.hold(id)?.action.joystickHorizontalEnabled ?? value },
             set: { newValue in model.updateHold(id) { $0.action.joystickHorizontalEnabled = newValue } }
+        )
+    }
+
+    private func holdJoystickCursorBinding(_ id: UUID, value: Bool) -> Binding<Bool> {
+        Binding(
+            get: { model.hold(id)?.action.joystickCapturesCursor ?? value },
+            set: { newValue in model.updateHold(id) { $0.action.joystickCapturesCursor = newValue } }
         )
     }
 

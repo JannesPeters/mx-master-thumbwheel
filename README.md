@@ -55,6 +55,37 @@ Accessibility**. Enable **Thumbwheel Remapper**, then launch it again. Older
 macOS releases use **System Preferences > Security & Privacy > Privacy >
 Accessibility**.
 
+### Updating an existing installation
+
+Stop the currently running app before installing an update. Replacing an app
+bundle does not update the executable that is already loaded in memory:
+
+```sh
+ps -axo pid=,comm=,args= | grep -F 'Thumbwheel Remapper' | grep -v grep
+kill <PID>
+```
+
+Update the version in `Resources/Info.plist` before building. Increment
+`CFBundleShortVersionString` for the user-facing release version and
+`CFBundleVersion` for the integer build number. Then install and relaunch the
+same copy:
+
+```sh
+make install
+open "$HOME/Applications/Thumbwheel Remapper.app"
+```
+
+Verify the installed bundle when needed:
+
+```sh
+plutil -p "$HOME/Applications/Thumbwheel Remapper.app/Contents/Info.plist" \
+  | grep -E 'CFBundleShortVersionString|CFBundleVersion'
+```
+
+The default installer uses `~/Applications`. If another copy exists in
+`/Applications`, launch the copy that was just updated or install explicitly
+there with `INSTALL_DIR=/Applications make install`.
+
 ## Architecture
 
 The package has three targets:
@@ -91,7 +122,9 @@ supports:
 - hold mappings with three peer modes: **Scroll up**, **Scroll down**, and
   **Joystick**; fixed-direction modes continuously scroll, while joystick mode
   uses pointer movement to scroll in either direction, with independent
-  vertical and horizontal axis toggles;
+  vertical and horizontal axis toggles. Joystick mappings can optionally
+  capture and hide the cursor; macOS requires the remapper to become active
+  while held, so the previously active app is restored on release;
 - button selection for other mouse buttons only. The primary left and right
   buttons are intentionally not remappable because intercepting them can
   interfere with normal macOS interaction;
@@ -124,10 +157,11 @@ continuous filters are part of the wheel action options.
 ### Scroll engines
 
 Discrete click animations are deterministic and sampleable. Hold scrolling is display-paced. The fixed-direction modes continuously scroll
-up or down and release into deterministic momentum. Joystick mode starts
-centered, lets vertical and horizontal scrolling be enabled independently, uses
-pointer movement to scroll in either direction on each enabled axis, and
-releases without a cursor-lock jump.
+up or down and release into deterministic momentum. Joystick mode uses the first
+movement on each enabled axis to choose one edge of the pause zone, so scrolling
+starts immediately in the intended direction while reversing still crosses the
+full pause zone. Vertical and horizontal scrolling are independently
+configurable, and release does not cause a cursor-lock jump.
 
 The event router consumes only mapped gestures. Unmapped left, right, other,
 pointer, wheel, and unrelated events are forwarded. Event-tap timeout and
