@@ -124,7 +124,8 @@ supports:
   uses pointer movement to scroll in either direction, with independent
   vertical and horizontal axis toggles. Joystick mappings can optionally
   capture and hide the cursor; macOS requires the remapper to become active
-  while held, so the previously active app is restored on release;
+  while held, so the settings window is hidden and the previously active app is
+  restored on release;
 - button selection for other mouse buttons only. The primary left and right
   buttons are intentionally not remappable because intercepting them can
   interfere with normal macOS interaction;
@@ -161,7 +162,9 @@ up or down and release into deterministic momentum. Joystick mode uses the first
 movement on each enabled axis to choose one edge of the pause zone, so scrolling
 starts immediately in the intended direction while reversing still crosses the
 full pause zone. Vertical and horizontal scrolling are independently
-configurable, and release does not cause a cursor-lock jump.
+configurable, and release does not cause a cursor-lock jump. When cursor
+capture is enabled, the settings window is hidden for the gesture and the
+previously active app is restored afterward.
 
 The event router consumes only mapped gestures. Unmapped left, right, other,
 pointer, wheel, and unrelated events are forwarded. Event-tap timeout and

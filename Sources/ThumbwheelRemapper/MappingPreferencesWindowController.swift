@@ -18,6 +18,8 @@ final class MappingPreferencesWindowController: NSWindowController, NSToolbarDel
     private let splitViewController: NSSplitViewController
     private var removeItem: NSToolbarItem?
     private var selectionCancellable: AnyCancellable?
+    private var isHiddenForJoystick = false
+    private var shouldRestoreAfterJoystick = false
 
     init(
         document: ConfigurationDocument,
@@ -57,8 +59,8 @@ final class MappingPreferencesWindowController: NSWindowController, NSToolbarDel
             backing: .buffered,
             defer: false
         )
-        window.title = "Thumbwheel Remapper"
-        window.titleVisibility = .hidden
+        window.title = model.selectedTitle
+        window.titleVisibility = .visible
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
         window.toolbarStyle = .unified
@@ -76,6 +78,7 @@ final class MappingPreferencesWindowController: NSWindowController, NSToolbarDel
         window.toolbar = toolbar
 
         selectionCancellable = model.$selection.sink { [weak self] selection in
+            self?.window?.title = self?.model.selectedTitle ?? "Mappings"
             self?.removeItem?.isEnabled = selection != nil && selection != .about
         }
         window.center()
@@ -86,7 +89,23 @@ final class MappingPreferencesWindowController: NSWindowController, NSToolbarDel
         fatalError("init(coder:) is not supported")
     }
 
+    func hideForJoystick() {
+        isHiddenForJoystick = true
+        shouldRestoreAfterJoystick = window?.isVisible == true
+        if shouldRestoreAfterJoystick {
+            window?.orderOut(nil)
+        }
+    }
+
+    func restoreAfterJoystick() {
+        isHiddenForJoystick = false
+        guard shouldRestoreAfterJoystick else { return }
+        shouldRestoreAfterJoystick = false
+        show()
+    }
+
     func show() {
+        guard !isHiddenForJoystick else { return }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }

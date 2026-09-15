@@ -251,16 +251,6 @@ struct MappingDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text(model.selectedTitle)
-                    .font(.title2.weight(.semibold))
-                Spacer()
-            }
-            .padding(.horizontal, 28)
-            .padding(.vertical, 18)
-
-            Divider()
-
             detailView
         }
         .frame(minWidth: 600, minHeight: 620)

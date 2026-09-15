@@ -10,13 +10,18 @@ final class RemapperRuntime {
     private(set) var document: ConfigurationDocument
     private var eventTapController: EventTapController?
     private var eventTapRunLoopSource: CFRunLoopSource?
+    var onJoystickActivityChanged: ((Bool) -> Void)?
 
     init() {
         document = store.load()
     }
 
     func start() {
-        let controller = EventTapController(document: document)
+        let controller = EventTapController(document: document) { [weak self] isActive in
+            DispatchQueue.main.async { [weak self] in
+                self?.onJoystickActivityChanged?(isActive)
+            }
+        }
         guard let eventTap = controller.createEventTap() else {
             if AXIsProcessTrusted() {
                 showError(
@@ -89,6 +94,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        runtime.onJoystickActivityChanged = { [weak self] isActive in
+            if isActive {
+                self?.mappingsWindow?.hideForJoystick()
+            } else {
+                self?.mappingsWindow?.restoreAfterJoystick()
+            }
+        }
         runtime.start()
     }
 

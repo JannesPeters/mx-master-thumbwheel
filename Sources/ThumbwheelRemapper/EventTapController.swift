@@ -42,10 +42,15 @@ final class EventTapController {
 
     private let joystickProfile = JoystickSpeedProfile()
     private let joystickHUD = JoystickHUDController()
+    private let onJoystickActivityChanged: (Bool) -> Void
 
-    init(document: ConfigurationDocument) {
+    init(
+        document: ConfigurationDocument,
+        onJoystickActivityChanged: @escaping (Bool) -> Void = { _ in }
+    ) {
         self.document = document
         self.router = EventRouter(document: document)
+        self.onJoystickActivityChanged = onJoystickActivityChanged
         self.gestureRecognizer = ButtonGestureRecognizer(
             timing: GestureTimingPolicy(
                 doubleClickInterval: NSEvent.doubleClickInterval,
@@ -396,6 +401,7 @@ final class EventTapController {
             let cursorLocation = NSEvent.mouseLocation
             if mapping.action.joystickCapturesCursor {
                 captureCursor()
+                onJoystickActivityChanged(true)
             }
             joystickHUD.show(at: cursorLocation)
         }
@@ -410,9 +416,14 @@ final class EventTapController {
 
     private func stopHold(released: Bool) {
         guard let mapping = activeHold else { return }
+        let wasCursorCaptureEnabled = mapping.action.mode == .joystick
+            && mapping.action.joystickCapturesCursor
         activeHold = nil
         joystickHUD.hide()
         releaseCursor()
+        if wasCursorCaptureEnabled {
+            onJoystickActivityChanged(false)
+        }
         if released,
            mapping.action.easingEnabled,
            max(abs(holdVerticalVelocity), abs(holdHorizontalVelocity)) > 0.01,

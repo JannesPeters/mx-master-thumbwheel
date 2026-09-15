@@ -84,7 +84,11 @@ movement direction to start at the corresponding edge of the pause zone.
 Scrolling therefore starts immediately in the intended direction, while a
 reversal still crosses the full pause zone. Both 1D and 2D displacement math
 are available in the core. Hold release uses deterministic momentum decay,
-while discrete clicks use a sampleable easing curve.
+while discrete clicks use a sampleable easing curve. Joystick mappings can
+optionally capture and hide the cursor; while that option is enabled, the
+settings window is hidden during the gesture and the previous app is restored
+afterward. Existing configurations default this option to enabled when the
+field is absent.
 
 ## Build and compatibility
 
