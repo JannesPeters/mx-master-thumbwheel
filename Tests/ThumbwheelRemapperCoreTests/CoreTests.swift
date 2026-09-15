@@ -91,10 +91,14 @@ final class ConfigurationTests: XCTestCase {
     }
 
     func testHoldModesArePeerOptions() {
-        XCTAssertEqual(HoldScrollMode.allCases, [.scrollUp, .scrollDown, .joystick])
+        XCTAssertEqual(
+            HoldScrollMode.allCases,
+            [.scrollUp, .scrollDown, .joystick, .dragScroll]
+        )
         XCTAssertEqual(HoldScrollMode.scrollUp.direction, .up)
         XCTAssertEqual(HoldScrollMode.scrollDown.direction, .down)
         XCTAssertNil(HoldScrollMode.joystick.direction)
+        XCTAssertNil(HoldScrollMode.dragScroll.direction)
     }
 
     func testJoystickAxesDefaultToVerticalOnlyAndRoundTrip() throws {
@@ -112,6 +116,108 @@ final class ConfigurationTests: XCTestCase {
         let data = try JSONEncoder().encode(configured)
         let decoded = try JSONDecoder().decode(HoldActionOptions.self, from: data)
         XCTAssertEqual(decoded, configured)
+    }
+
+    func testDragScrollOptionsRoundTripAndDefaultToBothAxesWithInertia() throws {
+        let defaults = HoldActionOptions(mode: .dragScroll)
+        XCTAssertTrue(defaults.dragScrollVerticalEnabled)
+        XCTAssertTrue(defaults.dragScrollHorizontalEnabled)
+        XCTAssertEqual(defaults.dragScrollMultiplier, 1)
+        XCTAssertFalse(defaults.dragScrollCapturesCursor)
+        XCTAssertFalse(defaults.dragScrollDistanceAccelerationEnabled)
+        XCTAssertEqual(defaults.dragScrollDistanceGain, 1)
+        XCTAssertTrue(defaults.dragScrollInertiaEnabled)
+        XCTAssertEqual(defaults.dragScrollInertiaAmount, 1)
+
+        let configured = HoldActionOptions(
+            mode: .dragScroll,
+            dragScrollVerticalEnabled: false,
+            dragScrollHorizontalEnabled: true,
+            dragScrollMultiplier: 2.5,
+            dragScrollCapturesCursor: true,
+            dragScrollDistanceAccelerationEnabled: true,
+            dragScrollDistanceGain: 0.75,
+            dragScrollInertiaEnabled: false,
+            dragScrollInertiaAmount: 1.5
+        )
+        let data = try JSONEncoder().encode(configured)
+        let decoded = try JSONDecoder().decode(HoldActionOptions.self, from: data)
+        XCTAssertEqual(decoded, configured)
+    }
+
+    func testDragScrollRejectsInertiaOutsideSupportedRange() {
+        let document = ConfigurationDocument(
+            buttonClicks: [],
+            buttonHolds: [
+                ButtonHoldMapping(
+                    button: .other(5),
+                    action: HoldActionOptions(
+                        mode: .dragScroll,
+                        dragScrollInertiaAmount: 2.1
+                    )
+                )
+            ],
+            wheelMappings: []
+        )
+
+        XCTAssertTrue(
+            MappingValidator.validate(document).contains {
+                if case .invalidValue(let message) = $0.kind {
+                    return message.contains("Drag-scroll inertia")
+                }
+                return false
+            }
+        )
+    }
+
+    func testDragScrollRejectsMultiplierOutsideSupportedRange() {
+        let document = ConfigurationDocument(
+            buttonClicks: [],
+            buttonHolds: [
+                ButtonHoldMapping(
+                    button: .other(5),
+                    action: HoldActionOptions(
+                        mode: .dragScroll,
+                        dragScrollMultiplier: 4.1
+                    )
+                )
+            ],
+            wheelMappings: []
+        )
+
+        XCTAssertTrue(
+            MappingValidator.validate(document).contains {
+                if case .invalidValue(let message) = $0.kind {
+                    return message.contains("Drag-scroll multiplier")
+                }
+                return false
+            }
+        )
+    }
+
+    func testDragScrollRejectsDistanceGainOutsideSupportedRange() {
+        let document = ConfigurationDocument(
+            buttonClicks: [],
+            buttonHolds: [
+                ButtonHoldMapping(
+                    button: .other(5),
+                    action: HoldActionOptions(
+                        mode: .dragScroll,
+                        dragScrollDistanceGain: 4.1
+                    )
+                )
+            ],
+            wheelMappings: []
+        )
+
+        XCTAssertTrue(
+            MappingValidator.validate(document).contains {
+                if case .invalidValue(let message) = $0.kind {
+                    return message.contains("Drag-scroll distance gain")
+                }
+                return false
+            }
+        )
     }
 
     func testDuplicateValidationAllowsIndependentClickKindsButRejectsSameGesture() {
@@ -226,6 +332,14 @@ final class ConfigurationTests: XCTestCase {
         XCTAssertTrue(hold.joystickVerticalEnabled)
         XCTAssertFalse(hold.joystickHorizontalEnabled)
         XCTAssertTrue(hold.joystickCapturesCursor)
+        XCTAssertTrue(hold.dragScrollVerticalEnabled)
+        XCTAssertTrue(hold.dragScrollHorizontalEnabled)
+        XCTAssertEqual(hold.dragScrollMultiplier, 1)
+        XCTAssertFalse(hold.dragScrollCapturesCursor)
+        XCTAssertFalse(hold.dragScrollDistanceAccelerationEnabled)
+        XCTAssertEqual(hold.dragScrollDistanceGain, 1)
+        XCTAssertTrue(hold.dragScrollInertiaEnabled)
+        XCTAssertEqual(hold.dragScrollInertiaAmount, 1)
     }
 }
 
@@ -436,6 +550,46 @@ final class EngineTests: XCTestCase {
         drag.release()
         XCTAssertGreaterThan(drag.advance(deltaTime: 0.1), 0)
         XCTAssertGreaterThan(drag.velocity, 0)
+    }
+
+    func testDragScrollDistanceMultiplierStartsAtBaseAndRampsWithDistance() {
+        XCTAssertEqual(
+            DragScrollMath.multiplier(
+                base: 1,
+                distance: 0,
+                distanceAccelerationEnabled: true,
+                distanceGain: 1
+            ),
+            1
+        )
+        XCTAssertEqual(
+            DragScrollMath.multiplier(
+                base: 1,
+                distance: 50,
+                distanceAccelerationEnabled: true,
+                distanceGain: 1
+            ),
+            1.5,
+            accuracy: 0.0001
+        )
+        XCTAssertEqual(
+            DragScrollMath.multiplier(
+                base: 1,
+                distance: 500,
+                distanceAccelerationEnabled: true,
+                distanceGain: 1
+            ),
+            4
+        )
+        XCTAssertEqual(
+            DragScrollMath.multiplier(
+                base: 1,
+                distance: 500,
+                distanceAccelerationEnabled: false,
+                distanceGain: 1
+            ),
+            1
+        )
     }
 
     func testJoystickSpeedHasNeutralAndDirectionZones() {

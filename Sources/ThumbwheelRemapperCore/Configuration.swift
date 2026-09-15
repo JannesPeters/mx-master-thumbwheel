@@ -87,15 +87,17 @@ public enum MappingValidator {
                 holdKeys[key] = mapping.id
             }
 
-            guard mapping.action.pointsPerSecond.isFinite,
-                  mapping.action.pointsPerSecond > 0 else {
-                issues.append(
-                    MappingValidationIssue(
-                        kind: .invalidValue("Hold speed must be greater than zero."),
-                        mappingID: mapping.id
+            if mapping.action.mode != .dragScroll {
+                guard mapping.action.pointsPerSecond.isFinite,
+                      mapping.action.pointsPerSecond > 0 else {
+                    issues.append(
+                        MappingValidationIssue(
+                            kind: .invalidValue("Hold speed must be greater than zero."),
+                            mappingID: mapping.id
+                        )
                     )
-                )
-                continue
+                    continue
+                }
             }
             if !mapping.action.accelerationDuration.isFinite
                 || !mapping.action.releaseDuration.isFinite
@@ -104,6 +106,39 @@ public enum MappingValidator {
                 issues.append(
                     MappingValidationIssue(
                         kind: .invalidValue("Hold timing values cannot be negative."),
+                        mappingID: mapping.id
+                    )
+                )
+            }
+            if mapping.action.mode == .dragScroll,
+               !mapping.action.dragScrollMultiplier.isFinite
+                || mapping.action.dragScrollMultiplier < 0.5
+                || mapping.action.dragScrollMultiplier > 4 {
+                issues.append(
+                    MappingValidationIssue(
+                        kind: .invalidValue("Drag-scroll multiplier must be between 0.5x and 4x."),
+                        mappingID: mapping.id
+                    )
+                )
+            }
+            if mapping.action.mode == .dragScroll,
+               !mapping.action.dragScrollDistanceGain.isFinite
+                || mapping.action.dragScrollDistanceGain < 0
+                || mapping.action.dragScrollDistanceGain > 4 {
+                issues.append(
+                    MappingValidationIssue(
+                        kind: .invalidValue("Drag-scroll distance gain must be between zero and four times per 100 points."),
+                        mappingID: mapping.id
+                    )
+                )
+            }
+            if mapping.action.mode == .dragScroll,
+               !mapping.action.dragScrollInertiaAmount.isFinite
+                || mapping.action.dragScrollInertiaAmount < 0
+                || mapping.action.dragScrollInertiaAmount > 2 {
+                issues.append(
+                    MappingValidationIssue(
+                        kind: .invalidValue("Drag-scroll inertia must be between zero and two times the latest drag speed."),
                         mappingID: mapping.id
                     )
                 )

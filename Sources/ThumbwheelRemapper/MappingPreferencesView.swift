@@ -803,34 +803,124 @@ struct MappingDetailView: View {
                     Text("Temporarily activates Thumbwheel Remapper while the joystick is held, then returns to the previous app.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                } else if mapping.action.mode == .dragScroll {
+                    Text("Drag the pointer to pan the content. Scrolling follows the direction and distance of your drag.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Toggle(
+                        "Vertical scrolling",
+                        isOn: holdDragScrollVerticalBinding(
+                            id,
+                            value: mapping.action.dragScrollVerticalEnabled
+                        )
+                    )
+                    Toggle(
+                        "Horizontal scrolling",
+                        isOn: holdDragScrollHorizontalBinding(
+                            id,
+                            value: mapping.action.dragScrollHorizontalEnabled
+                        )
+                    )
+                    valueSlider(
+                        label: "Scroll multiplier",
+                        value: holdDragScrollMultiplierBinding(
+                            id,
+                            value: mapping.action.dragScrollMultiplier
+                        ),
+                        range: SliderRanges.dragScrollMultiplier,
+                        step: 0.1,
+                        format: { String(format: "%.1fx", $0) }
+                    )
+                    Toggle(
+                        "Capture and hide cursor",
+                        isOn: holdDragScrollCursorBinding(
+                            id,
+                            value: mapping.action.dragScrollCapturesCursor
+                        )
+                    )
+                    Text("Temporarily activates Thumbwheel Remapper while dragging, then returns to the previous app on release.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Toggle(
+                        "Increase multiplier with drag distance",
+                        isOn: holdDragScrollDistanceAccelerationEnabledBinding(
+                            id,
+                            value: mapping.action.dragScrollDistanceAccelerationEnabled
+                        )
+                    )
+                    if mapping.action.dragScrollDistanceAccelerationEnabled {
+                        valueSlider(
+                            label: "Distance gain",
+                            value: holdDragScrollDistanceGainBinding(
+                                id,
+                                value: mapping.action.dragScrollDistanceGain
+                            ),
+                            range: SliderRanges.dragScrollDistanceGain,
+                            step: 0.1,
+                            format: { String(format: "%.1fx", $0) }
+                        )
+                        Text("Adds this multiplier for every 100 pt dragged, starting at the scroll multiplier and capped at 4.0x.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Toggle(
+                        "Inertia after release",
+                        isOn: holdDragScrollInertiaEnabledBinding(
+                            id,
+                            value: mapping.action.dragScrollInertiaEnabled
+                        )
+                    )
+                    if mapping.action.dragScrollInertiaEnabled {
+                        valueSlider(
+                            label: "Inertia amount",
+                            value: holdDragScrollInertiaAmountBinding(
+                                id,
+                                value: mapping.action.dragScrollInertiaAmount
+                            ),
+                            range: SliderRanges.dragScrollInertia,
+                            step: 0.05,
+                            format: { String(format: "%.2fx", $0) }
+                        )
+                        Text("Uses the latest drag speed; 1.00x preserves it and higher values extend the glide.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        valueSlider(
+                            label: "Deceleration",
+                            value: holdReleaseBinding(id, value: mapping.action.releaseDuration),
+                            range: SliderRanges.duration,
+                            step: 0.01,
+                            format: { String(format: "%.2f s", $0) }
+                        )
+                    }
+                } else {
+                    Toggle(
+                        "Ease acceleration and deceleration",
+                        isOn: holdEasingEnabledBinding(id, value: mapping.action.easingEnabled)
+                    )
+                    valueSlider(
+                        label: "Speed",
+                        value: holdSpeedBinding(id, value: mapping.action.pointsPerSecond),
+                        range: SliderRanges.holdSpeed,
+                        step: 10,
+                        format: { String(format: "%.0f pt/s", $0) }
+                    )
+                    valueSlider(
+                        label: "Acceleration",
+                        value: holdAccelerationBinding(id, value: mapping.action.accelerationDuration),
+                        range: SliderRanges.duration,
+                        step: 0.01,
+                        format: { String(format: "%.2f s", $0) }
+                    )
+                    .disabled(!mapping.action.easingEnabled)
+                    valueSlider(
+                        label: "Deceleration",
+                        value: holdReleaseBinding(id, value: mapping.action.releaseDuration),
+                        range: SliderRanges.duration,
+                        step: 0.01,
+                        format: { String(format: "%.2f s", $0) }
+                    )
+                    .disabled(!mapping.action.easingEnabled)
                 }
-                Toggle(
-                    "Ease acceleration and deceleration",
-                    isOn: holdEasingEnabledBinding(id, value: mapping.action.easingEnabled)
-                )
-                valueSlider(
-                    label: "Speed",
-                    value: holdSpeedBinding(id, value: mapping.action.pointsPerSecond),
-                    range: SliderRanges.holdSpeed,
-                    step: 10,
-                    format: { String(format: "%.0f pt/s", $0) }
-                )
-                valueSlider(
-                    label: "Acceleration",
-                    value: holdAccelerationBinding(id, value: mapping.action.accelerationDuration),
-                    range: SliderRanges.duration,
-                    step: 0.01,
-                    format: { String(format: "%.2f s", $0) }
-                )
-                .disabled(!mapping.action.easingEnabled)
-                valueSlider(
-                    label: "Deceleration",
-                    value: holdReleaseBinding(id, value: mapping.action.releaseDuration),
-                    range: SliderRanges.duration,
-                    step: 0.01,
-                    format: { String(format: "%.2f s", $0) }
-                )
-                .disabled(!mapping.action.easingEnabled)
             }
         }
     }
@@ -865,6 +955,9 @@ struct MappingDetailView: View {
         static let scrollDistance = 5.0...1_000.0
         static let duration = 0.0...1.0
         static let holdSpeed = 80.0...4_000.0
+        static let dragScrollMultiplier = 0.5...4.0
+        static let dragScrollDistanceGain = 0.0...4.0
+        static let dragScrollInertia = 0.0...2.0
     }
 
     private func valueSlider(
@@ -1063,6 +1156,76 @@ struct MappingDetailView: View {
         Binding(
             get: { model.hold(id)?.action.joystickCapturesCursor ?? value },
             set: { newValue in model.updateHold(id) { $0.action.joystickCapturesCursor = newValue } }
+        )
+    }
+
+    private func holdDragScrollVerticalBinding(_ id: UUID, value: Bool) -> Binding<Bool> {
+        Binding(
+            get: { model.hold(id)?.action.dragScrollVerticalEnabled ?? value },
+            set: { newValue in model.updateHold(id) { $0.action.dragScrollVerticalEnabled = newValue } }
+        )
+    }
+
+    private func holdDragScrollHorizontalBinding(_ id: UUID, value: Bool) -> Binding<Bool> {
+        Binding(
+            get: { model.hold(id)?.action.dragScrollHorizontalEnabled ?? value },
+            set: { newValue in model.updateHold(id) { $0.action.dragScrollHorizontalEnabled = newValue } }
+        )
+    }
+
+    private func holdDragScrollMultiplierBinding(_ id: UUID, value: Double) -> Binding<Double> {
+        Binding(
+            get: { model.hold(id)?.action.dragScrollMultiplier ?? value },
+            set: { newValue in
+                guard newValue.isFinite, newValue >= 0.5, newValue <= 4 else { return }
+                model.updateHold(id) { $0.action.dragScrollMultiplier = newValue }
+            }
+        )
+    }
+
+    private func holdDragScrollCursorBinding(_ id: UUID, value: Bool) -> Binding<Bool> {
+        Binding(
+            get: { model.hold(id)?.action.dragScrollCapturesCursor ?? value },
+            set: { newValue in model.updateHold(id) { $0.action.dragScrollCapturesCursor = newValue } }
+        )
+    }
+
+    private func holdDragScrollDistanceAccelerationEnabledBinding(
+        _ id: UUID,
+        value: Bool
+    ) -> Binding<Bool> {
+        Binding(
+            get: { model.hold(id)?.action.dragScrollDistanceAccelerationEnabled ?? value },
+            set: { newValue in
+                model.updateHold(id) { $0.action.dragScrollDistanceAccelerationEnabled = newValue }
+            }
+        )
+    }
+
+    private func holdDragScrollDistanceGainBinding(_ id: UUID, value: Double) -> Binding<Double> {
+        Binding(
+            get: { model.hold(id)?.action.dragScrollDistanceGain ?? value },
+            set: { newValue in
+                guard newValue.isFinite, newValue >= 0, newValue <= 4 else { return }
+                model.updateHold(id) { $0.action.dragScrollDistanceGain = newValue }
+            }
+        )
+    }
+
+    private func holdDragScrollInertiaEnabledBinding(_ id: UUID, value: Bool) -> Binding<Bool> {
+        Binding(
+            get: { model.hold(id)?.action.dragScrollInertiaEnabled ?? value },
+            set: { newValue in model.updateHold(id) { $0.action.dragScrollInertiaEnabled = newValue } }
+        )
+    }
+
+    private func holdDragScrollInertiaAmountBinding(_ id: UUID, value: Double) -> Binding<Double> {
+        Binding(
+            get: { model.hold(id)?.action.dragScrollInertiaAmount ?? value },
+            set: { newValue in
+                guard newValue.isFinite, newValue >= 0 else { return }
+                model.updateHold(id) { $0.action.dragScrollInertiaAmount = newValue }
+            }
         )
     }
 

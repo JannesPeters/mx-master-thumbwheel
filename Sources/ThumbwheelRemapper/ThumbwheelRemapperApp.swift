@@ -10,7 +10,7 @@ final class RemapperRuntime {
     private(set) var document: ConfigurationDocument
     private var eventTapController: EventTapController?
     private var eventTapRunLoopSource: CFRunLoopSource?
-    var onJoystickActivityChanged: ((Bool) -> Void)?
+    var onCursorCaptureActivityChanged: ((Bool) -> Void)?
 
     init() {
         document = store.load()
@@ -19,7 +19,7 @@ final class RemapperRuntime {
     func start() {
         let controller = EventTapController(document: document) { [weak self] isActive in
             DispatchQueue.main.async { [weak self] in
-                self?.onJoystickActivityChanged?(isActive)
+                self?.onCursorCaptureActivityChanged?(isActive)
             }
         }
         guard let eventTap = controller.createEventTap() else {
@@ -94,11 +94,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        runtime.onJoystickActivityChanged = { [weak self] isActive in
+        runtime.onCursorCaptureActivityChanged = { [weak self] isActive in
             if isActive {
-                self?.mappingsWindow?.hideForJoystick()
+                self?.mappingsWindow?.hideForCursorCapture()
             } else {
-                self?.mappingsWindow?.restoreAfterJoystick()
+                self?.mappingsWindow?.restoreAfterCursorCapture()
             }
         }
         runtime.start()

@@ -18,8 +18,8 @@ final class MappingPreferencesWindowController: NSWindowController, NSToolbarDel
     private let splitViewController: NSSplitViewController
     private var removeItem: NSToolbarItem?
     private var selectionCancellable: AnyCancellable?
-    private var isHiddenForJoystick = false
-    private var shouldRestoreAfterJoystick = false
+    private var isHiddenForCursorCapture = false
+    private var shouldRestoreAfterCursorCapture = false
 
     init(
         document: ConfigurationDocument,
@@ -89,23 +89,23 @@ final class MappingPreferencesWindowController: NSWindowController, NSToolbarDel
         fatalError("init(coder:) is not supported")
     }
 
-    func hideForJoystick() {
-        isHiddenForJoystick = true
-        shouldRestoreAfterJoystick = window?.isVisible == true
-        if shouldRestoreAfterJoystick {
+    func hideForCursorCapture() {
+        isHiddenForCursorCapture = true
+        shouldRestoreAfterCursorCapture = window?.isVisible == true
+        if shouldRestoreAfterCursorCapture {
             window?.orderOut(nil)
         }
     }
 
-    func restoreAfterJoystick() {
-        isHiddenForJoystick = false
-        guard shouldRestoreAfterJoystick else { return }
-        shouldRestoreAfterJoystick = false
+    func restoreAfterCursorCapture() {
+        isHiddenForCursorCapture = false
+        guard shouldRestoreAfterCursorCapture else { return }
+        shouldRestoreAfterCursorCapture = false
         window?.orderBack(nil)
     }
 
     func show() {
-        guard !isHiddenForJoystick else { return }
+        guard !isHiddenForCursorCapture else { return }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }
