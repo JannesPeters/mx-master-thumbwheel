@@ -172,6 +172,32 @@ public enum JoystickMath {
     }
 }
 
+public struct JoystickIntentAxis: Equatable {
+    private var initialDirection: Double?
+
+    public init() {
+        initialDirection = nil
+    }
+
+    public mutating func multiplier(
+        for displacement: Double,
+        profile: JoystickSpeedProfile
+    ) -> Double {
+        if initialDirection == nil {
+            guard displacement != 0 else { return 0 }
+            initialDirection = displacement > 0 ? 1 : -1
+        }
+
+        let pauseRadius = abs(profile.pauseZoneFarEdge - profile.pauseZoneNearEdge) / 2
+        let adjustedDisplacement = displacement + ((initialDirection ?? 0) * pauseRadius)
+        return profile.multiplier(for: adjustedDisplacement, centeredMode: true)
+    }
+
+    public mutating func reset() {
+        initialDirection = nil
+    }
+}
+
 public struct JoystickSpeedProfile: Equatable {
     public var activationDeadZone: Double
     public var forwardPointsPerSpeedStep: Double
