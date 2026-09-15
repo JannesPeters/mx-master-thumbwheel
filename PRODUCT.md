@@ -54,10 +54,13 @@ The executable target contains the macOS platform layer:
   window with SwiftUI-hosted sidebar and detail content.
 
 The SwiftUI mappings window edits the core document directly. It provides a
-mapping list, add/remove actions, contextual editing, button selection, disabled
-already-used choices, inline validation, immediate persistence, Restore
-Defaults, and help text. Invalid documents stay visible for correction but are
-never written or activated.
+single add action and unified mapping editor, button or wheel input triggers,
+single-click, double-click, and press-and-hold button gestures, action controls
+that change with the selected trigger, per-mapping enable/disable controls,
+disabled already-used choices, inline validation, immediate persistence, Restore
+Defaults, and help text. Existing mappings remain enabled when loaded, while
+new mappings start disabled. Invalid documents stay visible for correction but
+are never written or activated.
 
 ## Input behavior
 

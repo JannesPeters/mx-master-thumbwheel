@@ -13,6 +13,74 @@ final class ConfigurationTests: XCTestCase {
         XCTAssertEqual(defaults.buttonClicks.last?.button, .other(4))
         XCTAssertEqual(defaults.buttonClicks.last?.action.direction, .up)
         XCTAssertEqual(defaults.wheelMappings.first?.source, .horizontalThumbwheel)
+        XCTAssertTrue(defaults.buttonClicks.allSatisfy(\.isEnabled))
+        XCTAssertTrue(defaults.wheelMappings.allSatisfy(\.isEnabled))
+    }
+
+    func testMappingsDefaultToEnabledAndCanBeDisabled() throws {
+        let click = ButtonClickMapping(
+            button: .other(5),
+            action: ScrollActionOptions(direction: .up)
+        )
+        let hold = ButtonHoldMapping(
+            button: .other(6),
+            action: HoldActionOptions(mode: .scrollDown)
+        )
+        let wheel = WheelMapping()
+
+        XCTAssertTrue(click.isEnabled)
+        XCTAssertTrue(hold.isEnabled)
+        XCTAssertTrue(wheel.isEnabled)
+
+        let disabledClick = ButtonClickMapping(
+            isEnabled: false,
+            button: .other(5),
+            action: ScrollActionOptions(direction: .up)
+        )
+        let decoded = try JSONDecoder().decode(
+            ButtonClickMapping.self,
+            from: JSONEncoder().encode(disabledClick)
+        )
+        XCTAssertFalse(decoded.isEnabled)
+    }
+
+    func testMappingsWithoutEnabledFieldLoadAsEnabled() throws {
+        func removingEnabled<T: Encodable>(_ value: T) throws -> Data {
+            var object = try XCTUnwrap(
+                JSONSerialization.jsonObject(
+                    with: JSONEncoder().encode(value)
+                ) as? [String: Any]
+            )
+            object.removeValue(forKey: "isEnabled")
+            return try JSONSerialization.data(withJSONObject: object)
+        }
+
+        let click = try JSONDecoder().decode(
+            ButtonClickMapping.self,
+            from: removingEnabled(
+                ButtonClickMapping(
+                    button: .other(5),
+                    action: ScrollActionOptions(direction: .up)
+                )
+            )
+        )
+        let hold = try JSONDecoder().decode(
+            ButtonHoldMapping.self,
+            from: removingEnabled(
+                ButtonHoldMapping(
+                    button: .other(6),
+                    action: HoldActionOptions(mode: .scrollDown)
+                )
+            )
+        )
+        let wheel = try JSONDecoder().decode(
+            WheelMapping.self,
+            from: removingEnabled(WheelMapping())
+        )
+
+        XCTAssertTrue(click.isEnabled)
+        XCTAssertTrue(hold.isEnabled)
+        XCTAssertTrue(wheel.isEnabled)
     }
 
     func testButtonNamesDescribeCommonQuartzButtons() {
@@ -261,6 +329,40 @@ final class RoutingTests: XCTestCase {
         )
         XCTAssertEqual(
             router.route(.buttonDown(.left)),
+            .forward
+        )
+    }
+
+    func testDisabledMappingsAreIgnoredByRouter() {
+        var document = ConfigurationDocument.defaults
+        document.buttonClicks[0].isEnabled = false
+        document.buttonHolds = [
+            ButtonHoldMapping(
+                isEnabled: false,
+                button: .other(9),
+                action: HoldActionOptions(mode: .scrollDown)
+            )
+        ]
+        document.wheelMappings[0].isEnabled = false
+        let router = EventRouter(document: document)
+
+        XCTAssertEqual(
+            router.route(.buttonDown(.other(3))),
+            .forward
+        )
+        XCTAssertEqual(
+            router.route(.buttonDown(.other(9))),
+            .forward
+        )
+        XCTAssertEqual(
+            router.route(
+                .wheel(
+                    WheelEvent(
+                        horizontal: 4,
+                        pointHorizontal: 4
+                    )
+                )
+            ),
             .forward
         )
     }

@@ -113,12 +113,16 @@ failed writes are logged; the explicit default document is used when needed.
 
 ## Mapping manager
 
-Choose **Mappings…** from the status-item menu. The native preferences window
-supports:
+Choose **Mappings…** from the status-item menu. The native preferences window supports:
 
-- a list of click, hold, and wheel mappings;
+- a single list of mappings with one **Add Mapping** button;
+- choosing a button or wheel input trigger for each mapping;
+- button gestures for **Single click**, **Double click**, or **Press and hold**;
+- action controls that change with the selected input trigger and gesture;
+- an **Enabled** toggle for every mapping; existing mappings remain enabled,
+  while newly added mappings start disabled;
 - add, remove, and contextual edit actions;
-- independent single and double click mappings;
+- independent single and double click mappings for the same button;
 - hold mappings with three peer modes: **Scroll up**, **Scroll down**, and
   **Joystick**; fixed-direction modes continuously scroll, while joystick mode
   uses pointer movement to scroll in either direction, with independent
