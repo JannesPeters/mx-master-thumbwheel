@@ -33,8 +33,12 @@ final class EventTapController {
     private var joystickPointer = Point2D.zero
     private var joystickVerticalSpeed = 0.0
     private var joystickHorizontalSpeed = 0.0
-    private var isCursorLocked = false
-    private var hiddenCursorDisplayID: CGDirectDisplayID?
+    private var joystickVerticalIntent = JoystickIntentAxis()
+    private var joystickHorizontalIntent = JoystickIntentAxis()
+    private var isCursorCaptureActive = false
+    private var isCursorHidden = false
+    private var isCursorAssociated = true
+    private var previousFrontmostApplication: NSRunningApplication?
 
     private let joystickProfile = JoystickSpeedProfile()
     private let joystickHUD = JoystickHUDController()
@@ -59,7 +63,7 @@ final class EventTapController {
         gestureTimer?.invalidate()
         clickTimer?.invalidate()
         holdTimer?.invalidate()
-        unlockCursor()
+        releaseCursor()
     }
 
     func update(document: ConfigurationDocument) {
@@ -202,10 +206,16 @@ final class EventTapController {
         joystickPointer.y -= event.getDoubleValueField(.mouseEventDeltaY)
         let displacement = joystickDisplacement.update(pointer: joystickPointer)
         joystickVerticalSpeed = activeHold.action.joystickVerticalEnabled
-            ? joystickProfile.multiplier(for: displacement.y, centeredMode: true)
+            ? joystickVerticalIntent.multiplier(
+                for: displacement.y,
+                profile: joystickProfile
+            )
             : 0
         joystickHorizontalSpeed = activeHold.action.joystickHorizontalEnabled
-            ? joystickProfile.multiplier(for: displacement.x, centeredMode: true)
+            ? joystickHorizontalIntent.multiplier(
+                for: displacement.x,
+                profile: joystickProfile
+            )
             : 0
         joystickHUD.update(
             verticalSpeedMultiplier: joystickVerticalSpeed,
@@ -375,8 +385,11 @@ final class EventTapController {
         holdHorizontalVelocity = 0
         joystickDisplacement.reset()
         joystickPointer = .zero
+        _ = joystickDisplacement.update(pointer: joystickPointer)
         joystickVerticalSpeed = 0
         joystickHorizontalSpeed = 0
+        joystickVerticalIntent.reset()
+        joystickHorizontalIntent.reset()
         verticalMomentumEngine = DragScrollMomentumEngine(
             friction: 1 / max(mapping.action.releaseDuration, 0.01)
         )
@@ -385,11 +398,12 @@ final class EventTapController {
         )
 
         if mapping.action.mode == .joystick {
+            let cursorLocation = NSEvent.mouseLocation
             if mapping.action.joystickCapturesCursor {
-                lockCursor()
+                captureCursor()
                 onJoystickActivityChanged(true)
             }
-            joystickHUD.show(at: NSEvent.mouseLocation)
+            joystickHUD.show(at: cursorLocation)
         }
 
         holdTimer?.invalidate()
@@ -405,8 +419,8 @@ final class EventTapController {
         let wasCursorCaptureEnabled = mapping.action.mode == .joystick
             && mapping.action.joystickCapturesCursor
         activeHold = nil
-        unlockCursor()
         joystickHUD.hide()
+        releaseCursor()
         if wasCursorCaptureEnabled {
             onJoystickActivityChanged(false)
         }
@@ -532,28 +546,52 @@ final class EventTapController {
         event.post(tap: .cgSessionEventTap)
     }
 
-    private func lockCursor() {
-        guard !isCursorLocked else { return }
-        CGAssociateMouseAndMouseCursorPosition(boolean_t(0))
-        let point = NSEvent.mouseLocation
-        if let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }),
-           let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
-            let displayID = CGDirectDisplayID(number.uint32Value)
-            if CGDisplayHideCursor(displayID) == .success {
-                hiddenCursorDisplayID = displayID
-            }
+    private func captureCursor() {
+        guard !isCursorCaptureActive else { return }
+        let currentApplication = NSRunningApplication.current
+        if let frontmostApplication = NSWorkspace.shared.frontmostApplication,
+           frontmostApplication.processIdentifier != currentApplication.processIdentifier {
+            previousFrontmostApplication = frontmostApplication
         }
-        isCursorLocked = true
+        NSApp.activate(ignoringOtherApps: true)
+
+        let hideResult = CGDisplayHideCursor(CGMainDisplayID())
+        isCursorHidden = hideResult == .success
+        if hideResult != .success {
+            NSLog("Thumbwheel Remapper could not hide the cursor: \(hideResult.rawValue)")
+        }
+
+        let associationResult = CGAssociateMouseAndMouseCursorPosition(boolean_t(0))
+        isCursorAssociated = associationResult != .success
+        if associationResult != .success {
+            NSLog("Thumbwheel Remapper could not capture the cursor: \(associationResult.rawValue)")
+        }
+        isCursorCaptureActive = true
     }
 
-    private func unlockCursor() {
-        guard isCursorLocked else { return }
-        if let displayID = hiddenCursorDisplayID {
-            CGDisplayShowCursor(displayID)
-            hiddenCursorDisplayID = nil
+    private func releaseCursor() {
+        guard isCursorCaptureActive else { return }
+        if !isCursorAssociated {
+            let associationResult = CGAssociateMouseAndMouseCursorPosition(boolean_t(1))
+            if associationResult != .success {
+                NSLog("Thumbwheel Remapper could not release the cursor: \(associationResult.rawValue)")
+            }
+            isCursorAssociated = true
         }
-        CGAssociateMouseAndMouseCursorPosition(boolean_t(1))
-        isCursorLocked = false
+        if isCursorHidden {
+            let showResult = CGDisplayShowCursor(CGMainDisplayID())
+            if showResult != .success {
+                NSLog("Thumbwheel Remapper could not show the cursor: \(showResult.rawValue)")
+            }
+            isCursorHidden = false
+        }
+        isCursorCaptureActive = false
+
+        let application = previousFrontmostApplication
+        previousFrontmostApplication = nil
+        if let application, !application.isTerminated {
+            application.activate(options: [])
+        }
     }
 
     private func normalizedButton(

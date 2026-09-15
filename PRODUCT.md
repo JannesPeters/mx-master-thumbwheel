@@ -78,16 +78,17 @@ user-input disable callbacks are handled separately and re-enable the tap
 without changing routing decisions.
 
 Hold mappings have three peer modes: fixed continuous scrolling up, fixed
-continuous scrolling down, and a centered joystick. Joystick vertical and
-horizontal scrolling can be enabled independently, and each enabled axis
-scrolls in either direction from pointer movement. Joystick displacement is
-zero-start: the first pointer sample establishes the anchor and produces no
-jump. Both 1D and 2D math are available in the core. Hold release uses
-deterministic momentum decay, while discrete clicks use a sampleable easing
-curve. Joystick mappings can optionally capture and hide the cursor; while
-that option is enabled, the settings window is hidden during the gesture and
-the previous app is restored afterward. Existing configurations default this
-option to enabled when the field is absent.
+continuous scrolling down, and a joystick. Joystick vertical and horizontal
+scrolling can be enabled independently, and each enabled axis uses its first
+movement direction to start at the corresponding edge of the pause zone.
+Scrolling therefore starts immediately in the intended direction, while a
+reversal still crosses the full pause zone. Both 1D and 2D displacement math
+are available in the core. Hold release uses deterministic momentum decay,
+while discrete clicks use a sampleable easing curve. Joystick mappings can
+optionally capture and hide the cursor; while that option is enabled, the
+settings window is hidden during the gesture and the previous app is restored
+afterward. Existing configurations default this option to enabled when the
+field is absent.
 
 ## Build and compatibility
 

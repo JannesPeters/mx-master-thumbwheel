@@ -346,6 +346,24 @@ final class EngineTests: XCTestCase {
         XCTAssertGreaterThan(profile.multiplier(for: 300, centeredMode: true), 0)
         XCTAssertLessThan(profile.multiplier(for: -300, centeredMode: true), 0)
     }
+
+    func testJoystickIntentStartsAtTheRequestedPauseZoneEdge() {
+        let profile = JoystickSpeedProfile()
+        var positiveIntent = JoystickIntentAxis()
+
+        XCTAssertEqual(positiveIntent.multiplier(for: 0, profile: profile), 0)
+        XCTAssertGreaterThan(positiveIntent.multiplier(for: 1, profile: profile), 0)
+        XCTAssertEqual(positiveIntent.multiplier(for: -79, profile: profile), 0)
+        XCTAssertLessThan(positiveIntent.multiplier(for: -81, profile: profile), 0)
+
+        var negativeIntent = JoystickIntentAxis()
+        XCTAssertLessThan(negativeIntent.multiplier(for: -1, profile: profile), 0)
+        XCTAssertEqual(negativeIntent.multiplier(for: 79, profile: profile), 0)
+        XCTAssertGreaterThan(negativeIntent.multiplier(for: 81, profile: profile), 0)
+
+        positiveIntent.reset()
+        XCTAssertLessThan(positiveIntent.multiplier(for: -1, profile: profile), 0)
+    }
 }
 
 private enum TestError: Error {
