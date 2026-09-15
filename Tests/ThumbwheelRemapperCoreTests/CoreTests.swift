@@ -33,11 +33,13 @@ final class ConfigurationTests: XCTestCase {
         let defaults = HoldActionOptions(mode: .joystick)
         XCTAssertTrue(defaults.joystickVerticalEnabled)
         XCTAssertFalse(defaults.joystickHorizontalEnabled)
+        XCTAssertTrue(defaults.joystickCapturesCursor)
 
         let configured = HoldActionOptions(
             mode: .joystick,
             joystickVerticalEnabled: false,
-            joystickHorizontalEnabled: true
+            joystickHorizontalEnabled: true,
+            joystickCapturesCursor: false
         )
         let data = try JSONEncoder().encode(configured)
         let decoded = try JSONDecoder().decode(HoldActionOptions.self, from: data)
@@ -155,6 +157,7 @@ final class ConfigurationTests: XCTestCase {
         XCTAssertEqual(hold.mode, .joystick)
         XCTAssertTrue(hold.joystickVerticalEnabled)
         XCTAssertFalse(hold.joystickHorizontalEnabled)
+        XCTAssertTrue(hold.joystickCapturesCursor)
     }
 }
 

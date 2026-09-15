@@ -91,7 +91,8 @@ supports:
 - hold mappings with three peer modes: **Scroll up**, **Scroll down**, and
   **Joystick**; fixed-direction modes continuously scroll, while joystick mode
   uses pointer movement to scroll in either direction, with independent
-  vertical and horizontal axis toggles;
+  vertical and horizontal axis toggles plus an optional **Capture and hide
+  cursor** mode that temporarily activates Thumbwheel Remapper while held;
 - button selection for other mouse buttons only. The primary left and right
   buttons are intentionally not remappable because intercepting them can
   interfere with normal macOS interaction;
@@ -127,7 +128,9 @@ Discrete click animations are deterministic and sampleable. Hold scrolling is di
 up or down and release into deterministic momentum. Joystick mode starts
 centered, lets vertical and horizontal scrolling be enabled independently, uses
 pointer movement to scroll in either direction on each enabled axis, and
-releases without a cursor-lock jump.
+releases without a cursor-lock jump. When cursor capture is enabled, the
+settings window is hidden for the gesture and the previously active app is
+restored afterward.
 
 The event router consumes only mapped gestures. Unmapped left, right, other,
 pointer, wheel, and unrelated events are forwarded. Event-tap timeout and

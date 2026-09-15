@@ -84,7 +84,10 @@ scrolls in either direction from pointer movement. Joystick displacement is
 zero-start: the first pointer sample establishes the anchor and produces no
 jump. Both 1D and 2D math are available in the core. Hold release uses
 deterministic momentum decay, while discrete clicks use a sampleable easing
-curve.
+curve. Joystick mappings can optionally capture and hide the cursor; while
+that option is enabled, the settings window is hidden during the gesture and
+the previous app is restored afterward. Existing configurations default this
+option to enabled when the field is absent.
 
 ## Build and compatibility
 
