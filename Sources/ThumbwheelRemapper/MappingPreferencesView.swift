@@ -832,6 +832,28 @@ struct MappingDetailView: View {
                         format: { String(format: "%.1fx", $0) }
                     )
                     Toggle(
+                        "Smooth pointer movement",
+                        isOn: holdDragScrollSmoothingEnabledBinding(
+                            id,
+                            value: mapping.action.dragScrollSmoothingEnabled
+                        )
+                    )
+                    if mapping.action.dragScrollSmoothingEnabled {
+                        valueSlider(
+                            label: "Smoothing",
+                            value: holdDragScrollSmoothingDurationBinding(
+                                id,
+                                value: mapping.action.dragScrollSmoothingDuration
+                            ),
+                            range: SliderRanges.dragScrollSmoothingDuration,
+                            step: 0.005,
+                            format: { String(format: "%.0f ms", $0 * 1_000) }
+                        )
+                        Text("Blends pointer velocity to reduce tracking jitter. Longer durations feel smoother but add more latency.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Toggle(
                         "Capture and hide cursor",
                         isOn: holdDragScrollCursorBinding(
                             id,
@@ -956,6 +978,7 @@ struct MappingDetailView: View {
         static let duration = 0.0...1.0
         static let holdSpeed = 80.0...4_000.0
         static let dragScrollMultiplier = 0.5...4.0
+        static let dragScrollSmoothingDuration = 0.005...0.15
         static let dragScrollDistanceGain = 0.0...4.0
         static let dragScrollInertia = 0.0...2.0
     }
@@ -1179,6 +1202,28 @@ struct MappingDetailView: View {
             set: { newValue in
                 guard newValue.isFinite, newValue >= 0.5, newValue <= 4 else { return }
                 model.updateHold(id) { $0.action.dragScrollMultiplier = newValue }
+            }
+        )
+    }
+
+    private func holdDragScrollSmoothingEnabledBinding(_ id: UUID, value: Bool) -> Binding<Bool> {
+        Binding(
+            get: { model.hold(id)?.action.dragScrollSmoothingEnabled ?? value },
+            set: { newValue in
+                model.updateHold(id) { $0.action.dragScrollSmoothingEnabled = newValue }
+            }
+        )
+    }
+
+    private func holdDragScrollSmoothingDurationBinding(
+        _ id: UUID,
+        value: Double
+    ) -> Binding<Double> {
+        Binding(
+            get: { model.hold(id)?.action.dragScrollSmoothingDuration ?? value },
+            set: { newValue in
+                guard newValue.isFinite, newValue >= 0.005, newValue <= 0.15 else { return }
+                model.updateHold(id) { $0.action.dragScrollSmoothingDuration = newValue }
             }
         )
     }

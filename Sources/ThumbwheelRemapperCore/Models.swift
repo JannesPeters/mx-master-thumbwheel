@@ -265,6 +265,8 @@ public struct HoldActionOptions: Codable, Equatable {
     public var dragScrollVerticalEnabled: Bool
     public var dragScrollHorizontalEnabled: Bool
     public var dragScrollMultiplier: Double
+    public var dragScrollSmoothingEnabled: Bool
+    public var dragScrollSmoothingDuration: TimeInterval
     public var dragScrollCapturesCursor: Bool
     public var dragScrollDistanceAccelerationEnabled: Bool
     public var dragScrollDistanceGain: Double
@@ -283,6 +285,8 @@ public struct HoldActionOptions: Codable, Equatable {
         dragScrollVerticalEnabled: Bool = true,
         dragScrollHorizontalEnabled: Bool = true,
         dragScrollMultiplier: Double = 1,
+        dragScrollSmoothingEnabled: Bool = false,
+        dragScrollSmoothingDuration: TimeInterval = 0.025,
         dragScrollCapturesCursor: Bool = false,
         dragScrollDistanceAccelerationEnabled: Bool = false,
         dragScrollDistanceGain: Double = 1,
@@ -300,6 +304,8 @@ public struct HoldActionOptions: Codable, Equatable {
         self.dragScrollVerticalEnabled = dragScrollVerticalEnabled
         self.dragScrollHorizontalEnabled = dragScrollHorizontalEnabled
         self.dragScrollMultiplier = dragScrollMultiplier
+        self.dragScrollSmoothingEnabled = dragScrollSmoothingEnabled
+        self.dragScrollSmoothingDuration = dragScrollSmoothingDuration
         self.dragScrollCapturesCursor = dragScrollCapturesCursor
         self.dragScrollDistanceAccelerationEnabled = dragScrollDistanceAccelerationEnabled
         self.dragScrollDistanceGain = dragScrollDistanceGain
@@ -361,6 +367,8 @@ public struct HoldActionOptions: Codable, Equatable {
         case dragScrollVerticalEnabled
         case dragScrollHorizontalEnabled
         case dragScrollMultiplier
+        case dragScrollSmoothingEnabled
+        case dragScrollSmoothingDuration
         case dragScrollCapturesCursor
         case dragScrollDistanceAccelerationEnabled
         case dragScrollDistanceGain
@@ -387,6 +395,8 @@ public struct HoldActionOptions: Codable, Equatable {
         dragScrollVerticalEnabled = try container.decodeIfPresent(Bool.self, forKey: .dragScrollVerticalEnabled) ?? true
         dragScrollHorizontalEnabled = try container.decodeIfPresent(Bool.self, forKey: .dragScrollHorizontalEnabled) ?? true
         dragScrollMultiplier = try container.decodeIfPresent(Double.self, forKey: .dragScrollMultiplier) ?? 1
+        dragScrollSmoothingEnabled = try container.decodeIfPresent(Bool.self, forKey: .dragScrollSmoothingEnabled) ?? false
+        dragScrollSmoothingDuration = try container.decodeIfPresent(TimeInterval.self, forKey: .dragScrollSmoothingDuration) ?? 0.025
         dragScrollCapturesCursor = try container.decodeIfPresent(Bool.self, forKey: .dragScrollCapturesCursor) ?? false
         dragScrollDistanceAccelerationEnabled = try container.decodeIfPresent(Bool.self, forKey: .dragScrollDistanceAccelerationEnabled) ?? false
         dragScrollDistanceGain = try container.decodeIfPresent(Double.self, forKey: .dragScrollDistanceGain) ?? 1
@@ -408,6 +418,8 @@ public struct HoldActionOptions: Codable, Equatable {
         try container.encode(dragScrollVerticalEnabled, forKey: .dragScrollVerticalEnabled)
         try container.encode(dragScrollHorizontalEnabled, forKey: .dragScrollHorizontalEnabled)
         try container.encode(dragScrollMultiplier, forKey: .dragScrollMultiplier)
+        try container.encode(dragScrollSmoothingEnabled, forKey: .dragScrollSmoothingEnabled)
+        try container.encode(dragScrollSmoothingDuration, forKey: .dragScrollSmoothingDuration)
         try container.encode(dragScrollCapturesCursor, forKey: .dragScrollCapturesCursor)
         try container.encode(dragScrollDistanceAccelerationEnabled, forKey: .dragScrollDistanceAccelerationEnabled)
         try container.encode(dragScrollDistanceGain, forKey: .dragScrollDistanceGain)

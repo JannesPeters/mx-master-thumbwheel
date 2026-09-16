@@ -154,11 +154,11 @@ Choose **Mappings…** from the status-item menu. The native preferences window 
   scroll, while joystick mode uses pointer movement to scroll in either
   direction and drag scroll pans directly from pointer movement. Joystick and
   drag-scroll mappings have independent vertical and horizontal axis toggles,
-  a scroll-distance multiplier from 0.5x to 4.0x, optional cursor capture,
-  and an optional distance-based multiplier ramp. Drag scroll can also
-  continue with inertia after release, using the latest scaled drag speed and
-  a configurable inertia multiplier. Joystick mappings can optionally capture
-  and hide the cursor; macOS requires the remapper to
+  a scroll-distance multiplier from 0.5x to 4.0x, optional pointer smoothing
+  from 0 to 150 ms, optional cursor capture, and an optional distance-based
+  multiplier ramp. Drag scroll can also continue with inertia after release,
+  using the latest scaled drag speed and a configurable inertia multiplier.
+  Joystick mappings can optionally capture and hide the cursor; macOS requires the remapper to
   become active while held, so the settings window is hidden and the
   previously active app is restored on release;
 - button selection for other mouse buttons only. The primary left and right
@@ -200,8 +200,10 @@ immediately in the intended direction while reversing still crosses the full
 pause zone. Drag scroll coalesces raw pointer deltas into display-paced scroll
 events while preserving its configured distance multiplier, can ramp that
 multiplier with cumulative drag distance, and can release into deterministic
-momentum based on the latest scaled drag velocity. Cursor capture is optional
-for drag scroll and restores the previous app on release.
+momentum based on the latest scaled drag velocity. Pointer velocity can
+optionally be smoothed over a configurable duration to reduce tracking jitter.
+Cursor capture is optional for drag scroll and restores the previous app on
+release.
 Vertical and horizontal scrolling are independently configurable, and release
 does not cause a cursor-lock jump. When cursor capture is enabled, the settings
 window is hidden for the gesture and the previously active app is restored

@@ -123,6 +123,8 @@ final class ConfigurationTests: XCTestCase {
         XCTAssertTrue(defaults.dragScrollVerticalEnabled)
         XCTAssertTrue(defaults.dragScrollHorizontalEnabled)
         XCTAssertEqual(defaults.dragScrollMultiplier, 1)
+        XCTAssertFalse(defaults.dragScrollSmoothingEnabled)
+        XCTAssertEqual(defaults.dragScrollSmoothingDuration, 0.025)
         XCTAssertFalse(defaults.dragScrollCapturesCursor)
         XCTAssertFalse(defaults.dragScrollDistanceAccelerationEnabled)
         XCTAssertEqual(defaults.dragScrollDistanceGain, 1)
@@ -134,6 +136,8 @@ final class ConfigurationTests: XCTestCase {
             dragScrollVerticalEnabled: false,
             dragScrollHorizontalEnabled: true,
             dragScrollMultiplier: 2.5,
+            dragScrollSmoothingEnabled: true,
+            dragScrollSmoothingDuration: 0.045,
             dragScrollCapturesCursor: true,
             dragScrollDistanceAccelerationEnabled: true,
             dragScrollDistanceGain: 0.75,
@@ -189,6 +193,31 @@ final class ConfigurationTests: XCTestCase {
             MappingValidator.validate(document).contains {
                 if case .invalidValue(let message) = $0.kind {
                     return message.contains("Drag-scroll multiplier")
+                }
+                return false
+            }
+        )
+    }
+
+    func testDragScrollRejectsSmoothingOutsideSupportedRange() {
+        let document = ConfigurationDocument(
+            buttonClicks: [],
+            buttonHolds: [
+                ButtonHoldMapping(
+                    button: .other(5),
+                    action: HoldActionOptions(
+                        mode: .dragScroll,
+                        dragScrollSmoothingDuration: 0.151
+                    )
+                )
+            ],
+            wheelMappings: []
+        )
+
+        XCTAssertTrue(
+            MappingValidator.validate(document).contains {
+                if case .invalidValue(let message) = $0.kind {
+                    return message.contains("Drag-scroll smoothing")
                 }
                 return false
             }
