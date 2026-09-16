@@ -29,6 +29,8 @@ final class EventTapController {
     private var holdHorizontalVelocity = 0.0
     private var dragScrollLastMotionAt: TimeInterval?
     private var dragScrollDistanceTravelled = 0.0
+    private var pendingDragScrollVertical = 0.0
+    private var pendingDragScrollHorizontal = 0.0
     private var verticalMomentumEngine = DragScrollMomentumEngine()
     private var horizontalMomentumEngine = DragScrollMomentumEngine()
     private var joystickDisplacement = JoystickDisplacement2D()
@@ -239,7 +241,11 @@ final class EventTapController {
             : 0
         joystickHUD.update(
             verticalSpeedMultiplier: joystickVerticalSpeed,
-            horizontalSpeedMultiplier: joystickHorizontalSpeed
+            horizontalSpeedMultiplier: joystickHorizontalSpeed,
+            verticalDisplacement: displacement.y,
+            horizontalDisplacement: displacement.x,
+            verticalPauseDirection: joystickVerticalIntent.direction,
+            horizontalPauseDirection: joystickHorizontalIntent.direction
         )
         return nil
     }
@@ -281,10 +287,8 @@ final class EventTapController {
         )
         holdHorizontalVelocity = horizontalDelta / deltaTime
         holdVerticalVelocity = verticalDelta / deltaTime
-        postAccumulatedScroll(
-            vertical: verticalDelta,
-            horizontal: horizontalDelta
-        )
+        pendingDragScrollVertical += verticalDelta
+        pendingDragScrollHorizontal += horizontalDelta
         return nil
     }
 
@@ -458,6 +462,8 @@ final class EventTapController {
         joystickHorizontalSpeed = 0
         joystickVerticalIntent.reset()
         joystickHorizontalIntent.reset()
+        pendingDragScrollVertical = 0
+        pendingDragScrollHorizontal = 0
         verticalMomentumEngine = DragScrollMomentumEngine(
             friction: 1 / max(mapping.action.releaseDuration, 0.01)
         )
@@ -471,7 +477,12 @@ final class EventTapController {
                 captureCursor()
                 onCursorCaptureActivityChanged(true)
             }
-            joystickHUD.show(at: cursorLocation)
+            joystickHUD.show(
+                at: cursorLocation,
+                verticalAxisEnabled: mapping.action.joystickVerticalEnabled,
+                horizontalAxisEnabled: mapping.action.joystickHorizontalEnabled,
+                pauseZoneDistance: joystickProfile.pauseZoneDistance
+            )
         } else if mapping.action.mode == .dragScroll,
                   mapping.action.dragScrollCapturesCursor {
             captureCursor()
@@ -502,6 +513,14 @@ final class EventTapController {
             || (dragScrollLastMotionAt.map {
                 now - $0 <= dragScrollVelocityStaleInterval
             } ?? false)
+        if mapping.action.mode == .dragScroll {
+            postAccumulatedScroll(
+                vertical: pendingDragScrollVertical,
+                horizontal: pendingDragScrollHorizontal
+            )
+            pendingDragScrollVertical = 0
+            pendingDragScrollHorizontal = 0
+        }
         activeHold = nil
         joystickHUD.hide()
         releaseCursor()
@@ -538,6 +557,8 @@ final class EventTapController {
         holdLastFrameAt = nil
         dragScrollLastMotionAt = nil
         dragScrollDistanceTravelled = 0
+        pendingDragScrollVertical = 0
+        pendingDragScrollHorizontal = 0
     }
 
     private func tickHold() {
@@ -586,6 +607,12 @@ final class EventTapController {
                 holdVerticalVelocity = 0
                 holdHorizontalVelocity = 0
             }
+            postAccumulatedScroll(
+                vertical: pendingDragScrollVertical,
+                horizontal: pendingDragScrollHorizontal
+            )
+            pendingDragScrollVertical = 0
+            pendingDragScrollHorizontal = 0
             return
         }
         holdVerticalVelocity = mapping.action.pointsPerSecond * acceleration * verticalMultiplier

@@ -194,6 +194,10 @@ public struct JoystickIntentAxis: Equatable {
         initialDirection = nil
     }
 
+    public var direction: Double? {
+        initialDirection
+    }
+
     public mutating func multiplier(
         for displacement: Double,
         profile: JoystickSpeedProfile
@@ -221,6 +225,10 @@ public struct JoystickSpeedProfile: Equatable {
     public var reversePointsPerSpeedStep: Double
     public var minimumSpeedMultiplier: Double
     public var maximumSpeedMultiplier: Double
+
+    public var pauseZoneDistance: Double {
+        abs(pauseZoneFarEdge - pauseZoneNearEdge)
+    }
 
     public init(
         activationDeadZone: Double = 8,
