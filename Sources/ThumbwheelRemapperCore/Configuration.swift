@@ -122,6 +122,17 @@ public enum MappingValidator {
                 )
             }
             if mapping.action.mode == .dragScroll,
+               !mapping.action.dragScrollSmoothingDuration.isFinite
+                || mapping.action.dragScrollSmoothingDuration < 0
+                || mapping.action.dragScrollSmoothingDuration > 0.15 {
+                issues.append(
+                    MappingValidationIssue(
+                        kind: .invalidValue("Drag-scroll smoothing must be between zero and 150 ms."),
+                        mappingID: mapping.id
+                    )
+                )
+            }
+            if mapping.action.mode == .dragScroll,
                !mapping.action.dragScrollDistanceGain.isFinite
                 || mapping.action.dragScrollDistanceGain < 0
                 || mapping.action.dragScrollDistanceGain > 4 {

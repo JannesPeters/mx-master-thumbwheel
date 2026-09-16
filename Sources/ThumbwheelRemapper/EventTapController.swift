@@ -31,6 +31,10 @@ final class EventTapController {
     private var dragScrollDistanceTravelled = 0.0
     private var pendingDragScrollVertical = 0.0
     private var pendingDragScrollHorizontal = 0.0
+    private var dragScrollTargetVerticalVelocity = 0.0
+    private var dragScrollTargetHorizontalVelocity = 0.0
+    private var dragScrollVerticalSmoothingEngine = ContinuousScrollEngine()
+    private var dragScrollHorizontalSmoothingEngine = ContinuousScrollEngine()
     private var verticalMomentumEngine = DragScrollMomentumEngine()
     private var horizontalMomentumEngine = DragScrollMomentumEngine()
     private var joystickDisplacement = JoystickDisplacement2D()
@@ -42,6 +46,7 @@ final class EventTapController {
     private var isCursorCaptureActive = false
     private var isCursorHidden = false
     private var isCursorAssociated = true
+    private var isDragScrollCursorPushed = false
     private var previousFrontmostApplication: NSRunningApplication?
 
     private let joystickProfile = JoystickSpeedProfile()
@@ -69,6 +74,7 @@ final class EventTapController {
         clickTimer?.invalidate()
         holdTimer?.invalidate()
         releaseCursor()
+        restoreDragScrollCursor()
     }
 
     func update(document: ConfigurationDocument) {
@@ -259,6 +265,7 @@ final class EventTapController {
         guard verticalEnabled || horizontalEnabled else {
             return Unmanaged.passUnretained(event)
         }
+        refreshDragScrollCursor()
 
         let now = ProcessInfo.processInfo.systemUptime
         let deltaTime = max(
@@ -281,14 +288,20 @@ final class EventTapController {
         )
         let horizontalDelta = rawHorizontalDelta * multiplier
         let verticalDelta = rawVerticalDelta * multiplier
+        let horizontalVelocity = horizontalDelta / deltaTime
+        let verticalVelocity = verticalDelta / deltaTime
         dragScrollDistanceTravelled += sqrt(
             (rawHorizontalDelta * rawHorizontalDelta)
                 + (rawVerticalDelta * rawVerticalDelta)
         )
-        holdHorizontalVelocity = horizontalDelta / deltaTime
-        holdVerticalVelocity = verticalDelta / deltaTime
-        pendingDragScrollVertical += verticalDelta
-        pendingDragScrollHorizontal += horizontalDelta
+        dragScrollTargetHorizontalVelocity = horizontalVelocity
+        dragScrollTargetVerticalVelocity = verticalVelocity
+        holdHorizontalVelocity = horizontalVelocity
+        holdVerticalVelocity = verticalVelocity
+        if !isDragScrollSmoothingEnabled(mapping.action) {
+            pendingDragScrollVertical += verticalDelta
+            pendingDragScrollHorizontal += horizontalDelta
+        }
         return nil
     }
 
@@ -453,6 +466,17 @@ final class EventTapController {
         holdLastFrameAt = holdStartedAt
         holdVerticalVelocity = 0
         holdHorizontalVelocity = 0
+        dragScrollTargetVerticalVelocity = 0
+        dragScrollTargetHorizontalVelocity = 0
+        let smoothingResponse = isDragScrollSmoothingEnabled(mapping.action)
+            ? 1 / max(mapping.action.dragScrollSmoothingDuration, 0.001)
+            : 0
+        dragScrollVerticalSmoothingEngine = ContinuousScrollEngine(response: smoothingResponse)
+        dragScrollHorizontalSmoothingEngine = ContinuousScrollEngine(response: smoothingResponse)
+        if mapping.action.mode == .dragScroll {
+            fractionalPointCarry = 0
+            fractionalHorizontalPointCarry = 0
+        }
         dragScrollLastMotionAt = holdStartedAt
         dragScrollDistanceTravelled = 0
         joystickDisplacement.reset()
@@ -487,6 +511,10 @@ final class EventTapController {
                   mapping.action.dragScrollCapturesCursor {
             captureCursor()
             onCursorCaptureActivityChanged(true)
+        } else if mapping.action.mode == .dragScroll,
+                  mapping.action.dragScrollVerticalEnabled
+                    || mapping.action.dragScrollHorizontalEnabled {
+            pushDragScrollCursor()
         }
 
         holdTimer?.invalidate()
@@ -520,20 +548,32 @@ final class EventTapController {
             )
             pendingDragScrollVertical = 0
             pendingDragScrollHorizontal = 0
+            flushAccumulatedScroll()
         }
         activeHold = nil
         joystickHUD.hide()
         releaseCursor()
+        restoreDragScrollCursor()
         if wasCursorCaptureEnabled {
             onCursorCaptureActivityChanged(false)
         }
         let shouldReleaseMomentum: Bool
+        let releaseVerticalVelocity: Double
+        let releaseHorizontalVelocity: Double
+        if mapping.action.mode == .dragScroll,
+           isDragScrollSmoothingEnabled(mapping.action) {
+            releaseVerticalVelocity = dragScrollVerticalSmoothingEngine.velocity
+            releaseHorizontalVelocity = dragScrollHorizontalSmoothingEngine.velocity
+        } else {
+            releaseVerticalVelocity = holdVerticalVelocity
+            releaseHorizontalVelocity = holdHorizontalVelocity
+        }
         if mapping.action.mode == .dragScroll {
             shouldReleaseMomentum = released
                 && mapping.action.dragScrollInertiaEnabled
                 && hasRecentDragMotion
                 && mapping.action.dragScrollInertiaAmount > 0
-                && max(abs(holdVerticalVelocity), abs(holdHorizontalVelocity)) > 0.01
+                && max(abs(releaseVerticalVelocity), abs(releaseHorizontalVelocity)) > 0.01
                 && mapping.action.releaseDuration > 0
         } else {
             shouldReleaseMomentum = released
@@ -545,8 +585,8 @@ final class EventTapController {
             let velocityMultiplier = mapping.action.mode == .dragScroll
                 ? mapping.action.dragScrollInertiaAmount
                 : 1
-            verticalMomentumEngine.setVelocity(holdVerticalVelocity * velocityMultiplier)
-            horizontalMomentumEngine.setVelocity(holdHorizontalVelocity * velocityMultiplier)
+            verticalMomentumEngine.setVelocity(releaseVerticalVelocity * velocityMultiplier)
+            horizontalMomentumEngine.setVelocity(releaseHorizontalVelocity * velocityMultiplier)
             verticalMomentumEngine.release()
             horizontalMomentumEngine.release()
         } else {
@@ -559,6 +599,10 @@ final class EventTapController {
         dragScrollDistanceTravelled = 0
         pendingDragScrollVertical = 0
         pendingDragScrollHorizontal = 0
+        dragScrollTargetVerticalVelocity = 0
+        dragScrollTargetHorizontalVelocity = 0
+        dragScrollVerticalSmoothingEngine.reset()
+        dragScrollHorizontalSmoothingEngine.reset()
     }
 
     private func tickHold() {
@@ -602,15 +646,43 @@ final class EventTapController {
                 ? joystickHorizontalSpeed
                 : 0
         case .dragScroll:
-            if let lastMotionAt = dragScrollLastMotionAt,
-               now - lastMotionAt > dragScrollVelocityStaleInterval {
-                holdVerticalVelocity = 0
-                holdHorizontalVelocity = 0
+            refreshDragScrollCursor()
+            if isDragScrollSmoothingEnabled(mapping.action) {
+                let targetVerticalVelocity: Double
+                let targetHorizontalVelocity: Double
+                if let lastMotionAt = dragScrollLastMotionAt,
+                   now - lastMotionAt > dragScrollVelocityStaleInterval {
+                    targetVerticalVelocity = 0
+                    targetHorizontalVelocity = 0
+                } else {
+                    targetVerticalVelocity = dragScrollTargetVerticalVelocity
+                    targetHorizontalVelocity = dragScrollTargetHorizontalVelocity
+                }
+                let verticalDistance = dragScrollVerticalSmoothingEngine.advance(
+                    targetVelocity: targetVerticalVelocity,
+                    deltaTime: deltaTime
+                )
+                let horizontalDistance = dragScrollHorizontalSmoothingEngine.advance(
+                    targetVelocity: targetHorizontalVelocity,
+                    deltaTime: deltaTime
+                )
+                holdVerticalVelocity = dragScrollVerticalSmoothingEngine.velocity
+                holdHorizontalVelocity = dragScrollHorizontalSmoothingEngine.velocity
+                postAccumulatedScroll(
+                    vertical: verticalDistance,
+                    horizontal: horizontalDistance
+                )
+            } else {
+                if let lastMotionAt = dragScrollLastMotionAt,
+                   now - lastMotionAt > dragScrollVelocityStaleInterval {
+                    holdVerticalVelocity = 0
+                    holdHorizontalVelocity = 0
+                }
+                postAccumulatedScroll(
+                    vertical: pendingDragScrollVertical,
+                    horizontal: pendingDragScrollHorizontal
+                )
             }
-            postAccumulatedScroll(
-                vertical: pendingDragScrollVertical,
-                horizontal: pendingDragScrollHorizontal
-            )
             pendingDragScrollVertical = 0
             pendingDragScrollHorizontal = 0
             return
@@ -649,10 +721,15 @@ final class EventTapController {
         fractionalHorizontalPointCarry += horizontal
         let verticalPoints = Int32(fractionalPointCarry.rounded(.towardZero))
         let horizontalPoints = Int32(fractionalHorizontalPointCarry.rounded(.towardZero))
-        guard verticalPoints != 0 || horizontalPoints != 0 else { return }
         fractionalPointCarry -= Double(verticalPoints)
         fractionalHorizontalPointCarry -= Double(horizontalPoints)
-        postScroll(vertical: verticalPoints, horizontal: horizontalPoints)
+        guard vertical != 0 || horizontal != 0 else { return }
+        postScroll(
+            vertical: vertical,
+            horizontal: horizontal,
+            integerVertical: verticalPoints,
+            integerHorizontal: horizontalPoints
+        )
     }
 
     private func flushAccumulatedScroll() {
@@ -661,21 +738,56 @@ final class EventTapController {
         guard verticalRemaining != 0 || horizontalRemaining != 0 else { return }
         fractionalPointCarry = 0
         fractionalHorizontalPointCarry = 0
-        postScroll(vertical: verticalRemaining, horizontal: horizontalRemaining)
+        postScroll(
+            integerVertical: verticalRemaining,
+            integerHorizontal: horizontalRemaining
+        )
     }
 
-    private func postScroll(vertical: Int32, horizontal: Int32) {
-        guard vertical != 0 || horizontal != 0,
+    private func postScroll(
+        vertical: Double = 0,
+        horizontal: Double = 0,
+        integerVertical: Int32 = 0,
+        integerHorizontal: Int32 = 0
+    ) {
+        guard vertical != 0
+            || horizontal != 0
+            || integerVertical != 0
+            || integerHorizontal != 0,
               let event = CGEvent(
                 scrollWheelEvent2Source: nil,
                 units: .pixel,
                 wheelCount: 1,
-                wheel1: vertical,
-                wheel2: horizontal,
+                wheel1: integerVertical,
+                wheel2: integerHorizontal,
                 wheel3: 0
               ) else {
             return
         }
+        event.setIntegerValueField(
+            .scrollWheelEventDeltaAxis1,
+            value: Int64(integerVertical)
+        )
+        event.setDoubleValueField(
+            .scrollWheelEventFixedPtDeltaAxis1,
+            value: vertical
+        )
+        event.setIntegerValueField(
+            .scrollWheelEventPointDeltaAxis1,
+            value: Int64(integerVertical)
+        )
+        event.setIntegerValueField(
+            .scrollWheelEventDeltaAxis2,
+            value: Int64(integerHorizontal)
+        )
+        event.setDoubleValueField(
+            .scrollWheelEventFixedPtDeltaAxis2,
+            value: horizontal
+        )
+        event.setIntegerValueField(
+            .scrollWheelEventPointDeltaAxis2,
+            value: Int64(integerHorizontal)
+        )
         event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
         event.post(tap: .cgSessionEventTap)
     }
@@ -726,6 +838,28 @@ final class EventTapController {
         if let application, !application.isTerminated {
             application.activate(options: [])
         }
+    }
+
+    private func pushDragScrollCursor() {
+        guard !isDragScrollCursorPushed else { return }
+        NSCursor.closedHand.push()
+        isDragScrollCursorPushed = true
+    }
+
+    private func refreshDragScrollCursor() {
+        guard isDragScrollCursorPushed else { return }
+        NSCursor.closedHand.set()
+    }
+
+    private func isDragScrollSmoothingEnabled(_ action: HoldActionOptions) -> Bool {
+        action.dragScrollSmoothingEnabled
+            && action.dragScrollSmoothingDuration > 0
+    }
+
+    private func restoreDragScrollCursor() {
+        guard isDragScrollCursorPushed else { return }
+        NSCursor.pop()
+        isDragScrollCursorPushed = false
     }
 
     private func normalizedButton(
