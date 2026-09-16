@@ -1,4 +1,4 @@
-.PHONY: setup-signing app install clean
+.PHONY: setup-signing app install dev clean
 
 setup-signing:
 	./scripts/setup-local-signing.sh
@@ -8,6 +8,9 @@ app:
 
 install:
 	./scripts/install-app.sh
+
+dev:
+	./scripts/dev-reload.sh
 
 clean:
 	rm -rf build

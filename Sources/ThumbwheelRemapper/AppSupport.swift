@@ -98,94 +98,150 @@ final class PageDistanceResolver {
 private final class JoystickHUDView: NSView {
     var verticalSpeedMultiplier = 0.0
     var horizontalSpeedMultiplier = 0.0
+    var verticalDisplacement = 0.0
+    var horizontalDisplacement = 0.0
+    var verticalPauseDirection: Double?
+    var horizontalPauseDirection: Double?
+    var pauseZoneDistance = 80.0
+    var verticalAxisEnabled = true
+    var horizontalAxisEnabled = true
 
     override var isFlipped: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
-        let center = NSPoint(x: bounds.midX, y: bounds.midY + 10)
-        let dialRect = NSRect(x: center.x - 27, y: center.y - 27, width: 54, height: 54)
-        NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.25)
-        shadow.shadowBlurRadius = 8
-        shadow.shadowOffset = NSSize(width: 0, height: -2)
-        shadow.set()
-        NSColor.windowBackgroundColor.withAlphaComponent(0.96).setFill()
-        NSBezierPath(ovalIn: dialRect).fill()
-        NSGraphicsContext.restoreGraphicsState()
-
-        NSColor.gridColor.setStroke()
-        let border = NSBezierPath(ovalIn: dialRect.insetBy(dx: 0.5, dy: 0.5))
-        border.lineWidth = 1
-        border.stroke()
+        let center = NSPoint(x: bounds.midX, y: bounds.midY)
+        let vertical = verticalAxisEnabled ? verticalSpeedMultiplier : 0
+        let horizontal = horizontalAxisEnabled ? horizontalSpeedMultiplier : 0
+        let magnitude = hypot(horizontal, vertical)
+        let movementStart = 0.05
+        let morph = min(max((magnitude - movementStart) / 0.45, 0), 1)
+        let angle = magnitude > movementStart ? atan2(vertical, horizontal) : 0
+        let displacementScale = max(pauseZoneDistance, 1)
+        let normalizedVerticalDisplacement = verticalAxisEnabled
+            ? min(max(verticalDisplacement / displacementScale, -1), 1)
+            : 0
+        let normalizedHorizontalDisplacement = horizontalAxisEnabled
+            ? min(max(horizontalDisplacement / displacementScale, -1), 1)
+            : 0
+        let markerCenter = NSPoint(
+            x: center.x + (normalizedHorizontalDisplacement * 17),
+            y: center.y + (normalizedVerticalDisplacement * 17)
+        )
+        let color = NSColor.controlAccentColor.withAlphaComponent(0.78)
 
         let track = NSBezierPath()
-        track.move(to: NSPoint(x: center.x, y: center.y - 17))
-        track.line(to: NSPoint(x: center.x, y: center.y + 17))
-        track.move(to: NSPoint(x: center.x - 17, y: center.y))
-        track.line(to: NSPoint(x: center.x + 17, y: center.y))
+        if verticalAxisEnabled {
+            track.move(to: NSPoint(x: center.x, y: center.y - 17))
+            track.line(to: NSPoint(x: center.x, y: center.y + 17))
+        }
+        if horizontalAxisEnabled {
+            track.move(to: NSPoint(x: center.x - 17, y: center.y))
+            track.line(to: NSPoint(x: center.x + 17, y: center.y))
+        }
         track.lineWidth = 2
-        NSColor.tertiaryLabelColor.setStroke()
+        NSColor.tertiaryLabelColor.withAlphaComponent(0.34).setStroke()
         track.stroke()
 
-        let normalizedVertical = min(max(verticalSpeedMultiplier / 3, -1), 1)
-        let normalizedHorizontal = min(max(horizontalSpeedMultiplier / 3, -1), 1)
-        let knobPoint = NSPoint(
-            x: center.x + (normalizedHorizontal * 17),
-            y: center.y + (normalizedVertical * 17)
-        )
-        let color = verticalSpeedMultiplier < -0.05 || horizontalSpeedMultiplier < -0.05
-            ? NSColor.systemOrange
-            : NSColor.systemBlue
-        color.setFill()
-        NSBezierPath(
-            ovalIn: NSRect(x: knobPoint.x - 5, y: knobPoint.y - 5, width: 10, height: 10)
-        ).fill()
+        let pauseZoneLength = 17.0
+        let pauseZone = NSBezierPath()
+        if verticalAxisEnabled,
+           let verticalPauseDirection {
+            pauseZone.move(to: center)
+            pauseZone.line(to: NSPoint(
+                x: center.x,
+                y: center.y - CGFloat(verticalPauseDirection * pauseZoneLength)
+            ))
+        }
+        if horizontalAxisEnabled,
+           let horizontalPauseDirection {
+            pauseZone.move(to: center)
+            pauseZone.line(to: NSPoint(
+                x: center.x - CGFloat(horizontalPauseDirection * pauseZoneLength),
+                y: center.y
+            ))
+        }
+        pauseZone.lineWidth = 6
+        pauseZone.lineCapStyle = .round
+        color.withAlphaComponent(0.16).setStroke()
+        pauseZone.stroke()
 
-        let arrows = [
-            (tip: NSPoint(x: center.x, y: center.y + 24), first: NSPoint(x: center.x - 4, y: center.y + 20), second: NSPoint(x: center.x + 4, y: center.y + 20)),
-            (tip: NSPoint(x: center.x, y: center.y - 24), first: NSPoint(x: center.x - 4, y: center.y - 20), second: NSPoint(x: center.x + 4, y: center.y - 20)),
-            (tip: NSPoint(x: center.x + 24, y: center.y), first: NSPoint(x: center.x + 20, y: center.y - 4), second: NSPoint(x: center.x + 20, y: center.y + 4)),
-            (tip: NSPoint(x: center.x - 24, y: center.y), first: NSPoint(x: center.x - 20, y: center.y - 4), second: NSPoint(x: center.x - 20, y: center.y + 4)),
-        ]
-        color.setStroke()
-        for arrow in arrows {
+        func drawArrow(
+            tip: NSPoint,
+            first: NSPoint,
+            second: NSPoint
+        ) {
             let path = NSBezierPath()
-            path.move(to: arrow.first)
-            path.line(to: arrow.tip)
-            path.line(to: arrow.second)
+            path.move(to: first)
+            path.line(to: tip)
+            path.line(to: second)
             path.lineWidth = 1.5
             path.stroke()
         }
-
-        let text = max(abs(verticalSpeedMultiplier), abs(horizontalSpeedMultiplier)) < 0.05
-            ? "Paused"
-            : String(
-                format: "V %.1f×  H %.1f×",
-                verticalSpeedMultiplier,
-                horizontalSpeedMultiplier
+        color.withAlphaComponent(0.62).setStroke()
+        if verticalAxisEnabled {
+            drawArrow(
+                tip: NSPoint(x: center.x, y: center.y + 24),
+                first: NSPoint(x: center.x - 4, y: center.y + 20),
+                second: NSPoint(x: center.x + 4, y: center.y + 20)
             )
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedDigitSystemFont(
-                ofSize: 9,
-                weight: .semibold
-            ),
-            .foregroundColor: NSColor.labelColor,
-        ]
-        let textSize = text.size(withAttributes: attributes)
-        text.draw(
-            at: NSPoint(x: bounds.midX - (textSize.width / 2), y: 7),
-            withAttributes: attributes
+            drawArrow(
+                tip: NSPoint(x: center.x, y: center.y - 24),
+                first: NSPoint(x: center.x - 4, y: center.y - 20),
+                second: NSPoint(x: center.x + 4, y: center.y - 20)
+            )
+        }
+        if horizontalAxisEnabled {
+            drawArrow(
+                tip: NSPoint(x: center.x + 24, y: center.y),
+                first: NSPoint(x: center.x + 20, y: center.y - 4),
+                second: NSPoint(x: center.x + 20, y: center.y + 4)
+            )
+            drawArrow(
+                tip: NSPoint(x: center.x - 24, y: center.y),
+                first: NSPoint(x: center.x - 20, y: center.y - 4),
+                second: NSPoint(x: center.x - 20, y: center.y + 4)
+            )
+        }
+
+        color.withAlphaComponent(0.78 * (1 - morph)).setFill()
+        NSBezierPath(
+            ovalIn: NSRect(
+                x: markerCenter.x - 5.5,
+                y: markerCenter.y - 5.5,
+                width: 11,
+                height: 11
+            )
+        ).fill()
+
+        let triangleRadius = 8.0
+        let triangle = NSBezierPath()
+        let tip = NSPoint(
+            x: markerCenter.x + (cos(angle) * triangleRadius),
+            y: markerCenter.y + (sin(angle) * triangleRadius)
         )
+        let left = NSPoint(
+            x: markerCenter.x + (cos(angle + (2 * .pi / 3)) * triangleRadius),
+            y: markerCenter.y + (sin(angle + (2 * .pi / 3)) * triangleRadius)
+        )
+        let right = NSPoint(
+            x: markerCenter.x + (cos(angle - (2 * .pi / 3)) * triangleRadius),
+            y: markerCenter.y + (sin(angle - (2 * .pi / 3)) * triangleRadius)
+        )
+        triangle.move(to: tip)
+        triangle.line(to: left)
+        triangle.line(to: right)
+        triangle.close()
+        color.withAlphaComponent(0.78 * morph).setFill()
+        triangle.fill()
     }
 }
 
 final class JoystickHUDController {
     private let panel: NSPanel
     private let view: JoystickHUDView
-    private let size = NSSize(width: 112, height: 106)
+    private let size = NSSize(width: 78, height: 78)
 
     init() {
         view = JoystickHUDView(frame: NSRect(origin: .zero, size: size))
@@ -197,6 +253,7 @@ final class JoystickHUDController {
         )
         panel.backgroundColor = .clear
         panel.isOpaque = false
+        panel.alphaValue = 0.84
         panel.hasShadow = false
         panel.ignoresMouseEvents = true
         panel.level = .statusBar
@@ -204,19 +261,39 @@ final class JoystickHUDController {
         panel.contentView = view
     }
 
-    func show(at point: NSPoint) {
+    func show(
+        at point: NSPoint,
+        verticalAxisEnabled: Bool,
+        horizontalAxisEnabled: Bool,
+        pauseZoneDistance: Double
+    ) {
+        view.verticalAxisEnabled = verticalAxisEnabled
+        view.horizontalAxisEnabled = horizontalAxisEnabled
         view.verticalSpeedMultiplier = 0
         view.horizontalSpeedMultiplier = 0
+        view.verticalDisplacement = 0
+        view.horizontalDisplacement = 0
+        view.verticalPauseDirection = nil
+        view.horizontalPauseDirection = nil
+        view.pauseZoneDistance = pauseZoneDistance
         updatePosition(around: point)
         panel.orderFrontRegardless()
     }
 
     func update(
         verticalSpeedMultiplier: Double,
-        horizontalSpeedMultiplier: Double
+        horizontalSpeedMultiplier: Double,
+        verticalDisplacement: Double,
+        horizontalDisplacement: Double,
+        verticalPauseDirection: Double?,
+        horizontalPauseDirection: Double?
     ) {
         view.verticalSpeedMultiplier = verticalSpeedMultiplier
         view.horizontalSpeedMultiplier = horizontalSpeedMultiplier
+        view.verticalDisplacement = verticalDisplacement
+        view.horizontalDisplacement = horizontalDisplacement
+        view.verticalPauseDirection = verticalPauseDirection
+        view.horizontalPauseDirection = horizontalPauseDirection
         view.needsDisplay = true
     }
 

@@ -55,6 +55,32 @@ Accessibility**. Enable **Thumbwheel Remapper**, then launch it again. Older
 macOS releases use **System Preferences > Security & Privacy > Privacy >
 Accessibility**.
 
+### Development loop
+
+For automatic incremental debug builds and relaunches while working on the
+code, set up the local signing identity once and start the watcher:
+
+```sh
+make setup-signing
+make dev
+```
+
+The watcher performs an initial debug build, then polls the Swift sources,
+`Package.swift`, package resolution metadata, `Resources/Info.plist`, and the
+app icon generator. After a successful build it signs a staged bundle, stops
+only the process whose executable is the installed
+`~/Applications/Thumbwheel Remapper.app`, replaces that bundle, and relaunches
+it. A failed build leaves the last working app running and retries on the next
+change. Press `Ctrl-C` to stop the watcher; the currently running app is left
+in place.
+
+This is automatic rebuild and relaunch, not in-process hot reload, so open
+windows and other transient runtime state reset briefly after a successful
+build. During development the normal installed bundle contains a debug build.
+Run the standard `make install` workflow afterward to restore a release build.
+For a single reload without starting the watcher, use
+`./scripts/dev-reload.sh --once`.
+
 ### Updating an existing installation
 
 Stop the currently running app before installing an update. Replacing an app
@@ -171,11 +197,11 @@ display-paced. The fixed-direction modes continuously scroll up or down and
 release into deterministic momentum. Joystick mode uses the first movement on
 each enabled axis to choose one edge of the pause zone, so scrolling starts
 immediately in the intended direction while reversing still crosses the full
-pause zone. Drag scroll maps enabled pointer axes directly to scroll deltas
-through its configured multiplier, can ramp that multiplier with cumulative
-drag distance, and can release into deterministic momentum based on the latest
-scaled drag velocity. Cursor capture is optional for drag scroll and restores
-the previous app on release.
+pause zone. Drag scroll coalesces raw pointer deltas into display-paced scroll
+events while preserving its configured distance multiplier, can ramp that
+multiplier with cumulative drag distance, and can release into deterministic
+momentum based on the latest scaled drag velocity. Cursor capture is optional
+for drag scroll and restores the previous app on release.
 Vertical and horizontal scrolling are independently configurable, and release
 does not cause a cursor-lock jump. When cursor capture is enabled, the settings
 window is hidden for the gesture and the previously active app is restored

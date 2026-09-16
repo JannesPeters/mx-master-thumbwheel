@@ -87,12 +87,13 @@ horizontal scrolling can be enabled independently, and each enabled axis uses
 its first movement direction to start at the corresponding edge of the pause
 zone. Scrolling therefore starts immediately in the intended direction, while
 a reversal still crosses the full pause zone. Drag scroll maps enabled pointer
-axes directly to scroll deltas through a configurable 0.5x to 4x multiplier,
-can optionally capture and hide the cursor, and can ramp that multiplier with
-cumulative drag distance. Drag scroll can also continue with inertia based on
-the latest scaled drag speed and a separate inertia multiplier. Both 1D and 2D
-displacement math are available in the core. Hold release uses deterministic
-momentum decay, while discrete clicks use a sampleable easing curve. Joystick
+axes into display-paced scroll deltas through a configurable 0.5x to 4x
+multiplier, can optionally capture and hide the cursor, and can ramp that
+multiplier with cumulative drag distance. Drag scroll can also continue with
+inertia based on the latest scaled drag speed and a separate inertia
+multiplier. Both 1D and 2D displacement math are available in the core. Hold
+release uses deterministic momentum decay, while discrete clicks use a
+sampleable easing curve. Joystick
 mappings can optionally capture and hide the cursor; while that option is
 enabled, the settings window is hidden during the gesture and the previous
 app is restored afterward. Existing configurations default this option to
