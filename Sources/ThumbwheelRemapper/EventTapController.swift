@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import CoreGraphics
 import Foundation
 import ThumbwheelRemapperCore
@@ -18,6 +19,7 @@ final class EventTapController {
     private var clickDirection: ScrollDirection = .up
     private var clickStartedAt: TimeInterval?
     private var clickLastElapsed: TimeInterval = 0
+    private var clickPageEdgeDirection: ScrollDirection?
     private var fractionalPointCarry = 0.0
     private var fractionalHorizontalPointCarry = 0.0
 
@@ -51,6 +53,7 @@ final class EventTapController {
 
     private let joystickProfile = JoystickSpeedProfile()
     private let joystickHUD = JoystickHUDController()
+    private let floatingScrollBarHUD = FloatingScrollBarHUDController()
     private let onCursorCaptureActivityChanged: (Bool) -> Void
     private let dragScrollVelocityStaleInterval: TimeInterval = 0.12
 
@@ -379,6 +382,9 @@ final class EventTapController {
     private func startClick(_ options: ScrollActionOptions) {
         clickTimer?.invalidate()
         clickTimer = nil
+        clickAnimation = nil
+        clickStartedAt = nil
+        clickPageEdgeDirection = nil
         clickRequestID &+= 1
         fractionalPointCarry = 0
         fractionalHorizontalPointCarry = 0
@@ -405,15 +411,50 @@ final class EventTapController {
                     )
                 }
             }
+
+        case .pageEdge:
+            let location = NSEvent.mouseLocation
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let distance = PageDistanceResolver.edgeAnimationDistance(at: location)
+                DispatchQueue.main.async {
+                    self?.beginClick(
+                        distance: distance,
+                        options: options,
+                        requestID: requestID,
+                        pageEdgeDirection: options.direction
+                    )
+                }
+            }
         }
+    }
+
+    private func postPageEdgeKey(for direction: ScrollDirection) {
+        let keyCode = direction == .up ? kVK_Home : kVK_End
+        guard let source = CGEventSource(stateID: .hidSystemState),
+              let keyDown = CGEvent(
+                  keyboardEventSource: source,
+                  virtualKey: CGKeyCode(keyCode),
+                  keyDown: true
+              ),
+              let keyUp = CGEvent(
+                  keyboardEventSource: source,
+                  virtualKey: CGKeyCode(keyCode),
+                  keyDown: false
+              ) else {
+            return
+        }
+        keyDown.post(tap: .cgSessionEventTap)
+        keyUp.post(tap: .cgSessionEventTap)
     }
 
     private func beginClick(
         distance: Double,
         options: ScrollActionOptions,
-        requestID: Int
+        requestID: Int,
+        pageEdgeDirection: ScrollDirection? = nil
     ) {
         guard requestID == clickRequestID else { return }
+        clickPageEdgeDirection = pageEdgeDirection
         let signedDistance = distance * Double(options.direction.rawValue)
         let animation = DiscreteScrollAnimation(
             distance: signedDistance,
@@ -426,9 +467,7 @@ final class EventTapController {
 
         guard options.easingEnabled, options.duration > 0 else {
             postAccumulatedScroll(vertical: signedDistance)
-            flushAccumulatedScroll()
-            clickAnimation = nil
-            clickStartedAt = nil
+            finishClick()
             return
         }
 
@@ -450,17 +489,27 @@ final class EventTapController {
         postAccumulatedScroll(vertical: animation.delta(from: clickLastElapsed, to: elapsed))
         clickLastElapsed = elapsed
         if elapsed >= animation.duration {
-            flushAccumulatedScroll()
-            clickTimer?.invalidate()
-            clickTimer = nil
-            clickAnimation = nil
-            clickStartedAt = nil
+            finishClick()
         }
+    }
+
+    private func finishClick() {
+        flushAccumulatedScroll()
+        clickTimer?.invalidate()
+        clickTimer = nil
+        clickAnimation = nil
+        clickStartedAt = nil
+        guard let direction = clickPageEdgeDirection else { return }
+        clickPageEdgeDirection = nil
+        postPageEdgeKey(for: direction)
     }
 
     private func startHold(_ mapping: ButtonHoldMapping) {
         clickTimer?.invalidate()
         clickTimer = nil
+        clickAnimation = nil
+        clickStartedAt = nil
+        clickPageEdgeDirection = nil
         activeHold = mapping
         holdStartedAt = ProcessInfo.processInfo.systemUptime
         holdLastFrameAt = holdStartedAt
@@ -495,14 +544,18 @@ final class EventTapController {
             friction: 1 / max(mapping.action.releaseDuration, 0.01)
         )
 
+        let dragScrollLocation = NSEvent.mouseLocation
+        let floatingScrollTarget = mapping.action.mode == .dragScroll
+            && mapping.action.dragScrollShowsScrollbar
+            ? FloatingScrollTarget.capture(at: dragScrollLocation)
+            : nil
         if mapping.action.mode == .joystick {
-            let cursorLocation = NSEvent.mouseLocation
             if mapping.action.joystickCapturesCursor {
                 captureCursor()
                 onCursorCaptureActivityChanged(true)
             }
             joystickHUD.show(
-                at: cursorLocation,
+                at: dragScrollLocation,
                 verticalAxisEnabled: mapping.action.joystickVerticalEnabled,
                 horizontalAxisEnabled: mapping.action.joystickHorizontalEnabled,
                 pauseZoneDistance: joystickProfile.pauseZoneDistance
@@ -515,6 +568,17 @@ final class EventTapController {
                   mapping.action.dragScrollVerticalEnabled
                     || mapping.action.dragScrollHorizontalEnabled {
             pushDragScrollCursor()
+        }
+        if mapping.action.mode == .dragScroll,
+           mapping.action.dragScrollShowsScrollbar,
+           mapping.action.dragScrollVerticalEnabled
+            || mapping.action.dragScrollHorizontalEnabled {
+            floatingScrollBarHUD.show(
+                at: dragScrollLocation,
+                target: floatingScrollTarget,
+                verticalAxisEnabled: mapping.action.dragScrollVerticalEnabled,
+                horizontalAxisEnabled: mapping.action.dragScrollHorizontalEnabled
+            )
         }
 
         holdTimer?.invalidate()
@@ -552,6 +616,7 @@ final class EventTapController {
         }
         activeHold = nil
         joystickHUD.hide()
+        floatingScrollBarHUD.hide()
         releaseCursor()
         restoreDragScrollCursor()
         if wasCursorCaptureEnabled {
@@ -647,6 +712,9 @@ final class EventTapController {
                 : 0
         case .dragScroll:
             refreshDragScrollCursor()
+            if mapping.action.dragScrollShowsScrollbar {
+                floatingScrollBarHUD.refresh()
+            }
             if isDragScrollSmoothingEnabled(mapping.action) {
                 let targetVerticalVelocity: Double
                 let targetHorizontalVelocity: Double

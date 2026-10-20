@@ -134,6 +134,7 @@ public enum HoldScrollMode: String, Codable, CaseIterable, Equatable, Identifiab
 public enum ScrollAmount: Codable, Equatable {
     case fixed(Double)
     case page
+    case pageEdge
 
     private enum CodingKeys: String, CodingKey {
         case kind
@@ -143,6 +144,7 @@ public enum ScrollAmount: Codable, Equatable {
     private enum Kind: String, Codable {
         case fixed
         case page
+        case pageEdge
     }
 
     public init(from decoder: Decoder) throws {
@@ -152,6 +154,8 @@ public enum ScrollAmount: Codable, Equatable {
             self = .fixed(try container.decode(Double.self, forKey: .points))
         case .page:
             self = .page
+        case .pageEdge:
+            self = .pageEdge
         }
     }
 
@@ -163,6 +167,8 @@ public enum ScrollAmount: Codable, Equatable {
             try container.encode(points, forKey: .points)
         case .page:
             try container.encode(Kind.page, forKey: .kind)
+        case .pageEdge:
+            try container.encode(Kind.pageEdge, forKey: .kind)
         }
     }
 }
@@ -268,6 +274,7 @@ public struct HoldActionOptions: Codable, Equatable {
     public var dragScrollSmoothingEnabled: Bool
     public var dragScrollSmoothingDuration: TimeInterval
     public var dragScrollCapturesCursor: Bool
+    public var dragScrollShowsScrollbar: Bool
     public var dragScrollDistanceAccelerationEnabled: Bool
     public var dragScrollDistanceGain: Double
     public var dragScrollInertiaEnabled: Bool
@@ -288,6 +295,7 @@ public struct HoldActionOptions: Codable, Equatable {
         dragScrollSmoothingEnabled: Bool = false,
         dragScrollSmoothingDuration: TimeInterval = 0.025,
         dragScrollCapturesCursor: Bool = false,
+        dragScrollShowsScrollbar: Bool = false,
         dragScrollDistanceAccelerationEnabled: Bool = false,
         dragScrollDistanceGain: Double = 1,
         dragScrollInertiaEnabled: Bool = true,
@@ -307,6 +315,7 @@ public struct HoldActionOptions: Codable, Equatable {
         self.dragScrollSmoothingEnabled = dragScrollSmoothingEnabled
         self.dragScrollSmoothingDuration = dragScrollSmoothingDuration
         self.dragScrollCapturesCursor = dragScrollCapturesCursor
+        self.dragScrollShowsScrollbar = dragScrollShowsScrollbar
         self.dragScrollDistanceAccelerationEnabled = dragScrollDistanceAccelerationEnabled
         self.dragScrollDistanceGain = dragScrollDistanceGain
         self.dragScrollInertiaEnabled = dragScrollInertiaEnabled
@@ -370,6 +379,8 @@ public struct HoldActionOptions: Codable, Equatable {
         case dragScrollSmoothingEnabled
         case dragScrollSmoothingDuration
         case dragScrollCapturesCursor
+        case dragScrollShowsScrollbar
+        case dragScrollShowsIndicator
         case dragScrollDistanceAccelerationEnabled
         case dragScrollDistanceGain
         case dragScrollInertiaEnabled
@@ -398,6 +409,10 @@ public struct HoldActionOptions: Codable, Equatable {
         dragScrollSmoothingEnabled = try container.decodeIfPresent(Bool.self, forKey: .dragScrollSmoothingEnabled) ?? false
         dragScrollSmoothingDuration = try container.decodeIfPresent(TimeInterval.self, forKey: .dragScrollSmoothingDuration) ?? 0.025
         dragScrollCapturesCursor = try container.decodeIfPresent(Bool.self, forKey: .dragScrollCapturesCursor) ?? false
+        dragScrollShowsScrollbar =
+            try container.decodeIfPresent(Bool.self, forKey: .dragScrollShowsScrollbar)
+            ?? container.decodeIfPresent(Bool.self, forKey: .dragScrollShowsIndicator)
+            ?? false
         dragScrollDistanceAccelerationEnabled = try container.decodeIfPresent(Bool.self, forKey: .dragScrollDistanceAccelerationEnabled) ?? false
         dragScrollDistanceGain = try container.decodeIfPresent(Double.self, forKey: .dragScrollDistanceGain) ?? 1
         dragScrollInertiaEnabled = try container.decodeIfPresent(Bool.self, forKey: .dragScrollInertiaEnabled) ?? true
@@ -421,6 +436,7 @@ public struct HoldActionOptions: Codable, Equatable {
         try container.encode(dragScrollSmoothingEnabled, forKey: .dragScrollSmoothingEnabled)
         try container.encode(dragScrollSmoothingDuration, forKey: .dragScrollSmoothingDuration)
         try container.encode(dragScrollCapturesCursor, forKey: .dragScrollCapturesCursor)
+        try container.encode(dragScrollShowsScrollbar, forKey: .dragScrollShowsScrollbar)
         try container.encode(dragScrollDistanceAccelerationEnabled, forKey: .dragScrollDistanceAccelerationEnabled)
         try container.encode(dragScrollDistanceGain, forKey: .dragScrollDistanceGain)
         try container.encode(dragScrollInertiaEnabled, forKey: .dragScrollInertiaEnabled)

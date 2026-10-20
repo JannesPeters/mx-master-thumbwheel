@@ -126,6 +126,7 @@ final class ConfigurationTests: XCTestCase {
         XCTAssertFalse(defaults.dragScrollSmoothingEnabled)
         XCTAssertEqual(defaults.dragScrollSmoothingDuration, 0.025)
         XCTAssertFalse(defaults.dragScrollCapturesCursor)
+        XCTAssertFalse(defaults.dragScrollShowsScrollbar)
         XCTAssertFalse(defaults.dragScrollDistanceAccelerationEnabled)
         XCTAssertEqual(defaults.dragScrollDistanceGain, 1)
         XCTAssertTrue(defaults.dragScrollInertiaEnabled)
@@ -139,6 +140,7 @@ final class ConfigurationTests: XCTestCase {
             dragScrollSmoothingEnabled: true,
             dragScrollSmoothingDuration: 0.045,
             dragScrollCapturesCursor: true,
+            dragScrollShowsScrollbar: true,
             dragScrollDistanceAccelerationEnabled: true,
             dragScrollDistanceGain: 0.75,
             dragScrollInertiaEnabled: false,
@@ -147,6 +149,24 @@ final class ConfigurationTests: XCTestCase {
         let data = try JSONEncoder().encode(configured)
         let decoded = try JSONDecoder().decode(HoldActionOptions.self, from: data)
         XCTAssertEqual(decoded, configured)
+    }
+
+    func testLegacyDragIndicatorSettingEnablesFloatingScrollbar() throws {
+        let configured = HoldActionOptions(mode: .dragScroll)
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(
+                with: JSONEncoder().encode(configured)
+            ) as? [String: Any]
+        )
+        object.removeValue(forKey: "dragScrollShowsScrollbar")
+        object["dragScrollShowsIndicator"] = true
+
+        let decoded = try JSONDecoder().decode(
+            HoldActionOptions.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+
+        XCTAssertTrue(decoded.dragScrollShowsScrollbar)
     }
 
     func testDragScrollRejectsInertiaOutsideSupportedRange() {
@@ -358,6 +378,7 @@ final class ConfigurationTests: XCTestCase {
         XCTAssertTrue(click.easingEnabled)
         XCTAssertTrue(hold.easingEnabled)
         XCTAssertEqual(hold.mode, .joystick)
+        XCTAssertFalse(hold.dragScrollShowsScrollbar)
         XCTAssertTrue(hold.joystickVerticalEnabled)
         XCTAssertFalse(hold.joystickHorizontalEnabled)
         XCTAssertTrue(hold.joystickCapturesCursor)
@@ -369,6 +390,20 @@ final class ConfigurationTests: XCTestCase {
         XCTAssertEqual(hold.dragScrollDistanceGain, 1)
         XCTAssertTrue(hold.dragScrollInertiaEnabled)
         XCTAssertEqual(hold.dragScrollInertiaAmount, 1)
+    }
+
+    func testPageEdgeClickActionRoundTrips() throws {
+        let action = ScrollActionOptions(
+            direction: .down,
+            amount: .pageEdge
+        )
+
+        let decoded = try JSONDecoder().decode(
+            ScrollActionOptions.self,
+            from: JSONEncoder().encode(action)
+        )
+
+        XCTAssertEqual(decoded, action)
     }
 }
 

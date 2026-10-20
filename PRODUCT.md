@@ -60,8 +60,11 @@ single-click, double-click, and press-and-hold button gestures, action controls
 that change with the selected trigger, per-mapping enable/disable controls,
 disabled already-used choices, inline validation, immediate persistence, Restore
 Defaults, and help text. Existing mappings remain enabled when loaded, while
-new mappings start disabled. Invalid documents stay visible for correction but
-are never written or activated.
+new mappings start disabled. Click and double-click mappings can scroll a fixed
+distance, one page, or directly to the top or bottom of the page. Page-edge
+actions use the configured duration and easing curve before snapping to the
+exact edge. Invalid documents stay visible for correction but are never written
+or activated.
 
 ## Input behavior
 
@@ -89,7 +92,9 @@ zone. Scrolling therefore starts immediately in the intended direction, while
 a reversal still crosses the full pause zone. Drag scroll maps enabled pointer
 axes into display-paced scroll deltas through a configurable 0.5x to 4x
 multiplier, can optionally smooth pointer velocity, can optionally capture and
-hide the cursor, and can ramp that multiplier with cumulative drag distance.
+hide the cursor, can show a floating scrollbar that mirrors the target view's
+scroll position and visible-page proportion, and can ramp that multiplier with
+cumulative drag distance.
 Drag scroll can also continue with inertia based on the latest scaled drag speed
 and a separate inertia
 multiplier. Both 1D and 2D displacement math are available in the core. Hold
