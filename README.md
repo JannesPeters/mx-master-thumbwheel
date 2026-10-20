@@ -149,13 +149,17 @@ Choose **Mappings…** from the status-item menu. The native preferences window 
   while newly added mappings start disabled;
 - add, remove, and contextual edit actions;
 - independent single and double click mappings for the same button;
+- click and double-click actions that scroll a fixed distance, one page, or
+  directly to the top or bottom of the page, with configurable duration and
+  easing;
 - hold mappings with four peer modes: **Scroll up**, **Scroll down**,
   **Joystick**, and **Drag scroll**; fixed-direction modes continuously
   scroll, while joystick mode uses pointer movement to scroll in either
   direction and drag scroll pans directly from pointer movement. Joystick and
   drag-scroll mappings have independent vertical and horizontal axis toggles,
   a scroll-distance multiplier from 0.5x to 4.0x, optional pointer smoothing
-  from 0 to 150 ms, optional cursor capture, and an optional distance-based
+  from 0 to 150 ms, optional cursor capture, an optional floating scrollbar
+  anchored at the drag start, and an optional distance-based
   multiplier ramp. Drag scroll can also continue with inertia after release,
   using the latest scaled drag speed and a configurable inertia multiplier.
   Joystick mappings can optionally capture and hide the cursor; macOS requires the remapper to
@@ -192,16 +196,20 @@ continuous filters are part of the wheel action options.
 
 ### Scroll engines
 
-Discrete click animations are deterministic and sampleable. Hold scrolling is
+Discrete fixed-distance, one-page, and page-edge click animations are
+deterministic and sampleable. Page-edge clicks animate toward their destination
+using the configured duration and easing curve, then send the standard macOS
+Home or End action to ensure the exact edge is reached. Hold scrolling is
 display-paced. The fixed-direction modes continuously scroll up or down and
-release into deterministic momentum. Joystick mode uses the first movement on
-each enabled axis to choose one edge of the pause zone, so scrolling starts
-immediately in the intended direction while reversing still crosses the full
-pause zone. Drag scroll coalesces raw pointer deltas into display-paced scroll
-events while preserving its configured distance multiplier, can ramp that
-multiplier with cumulative drag distance, and can release into deterministic
-momentum based on the latest scaled drag velocity. Pointer velocity can
-optionally be smoothed over a configurable duration to reduce tracking jitter.
+release into deterministic momentum. Joystick mode uses the first
+movement on each enabled axis to choose one edge of the pause zone, so scrolling
+starts immediately in the intended direction while reversing still crosses the
+full pause zone. Drag scroll coalesces raw pointer deltas into display-paced
+scroll events while preserving its configured distance multiplier, can ramp
+that multiplier with cumulative drag distance, and can release into
+deterministic momentum based on the latest scaled drag velocity. Pointer
+velocity can optionally be smoothed over a configurable duration to reduce
+tracking jitter.
 Cursor capture is optional for drag scroll and restores the previous app on
 release.
 Vertical and horizontal scrolling are independently configurable, and release

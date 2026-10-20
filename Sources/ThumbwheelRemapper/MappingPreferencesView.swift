@@ -2,6 +2,86 @@ import Combine
 import SwiftUI
 import ThumbwheelRemapperCore
 
+private struct SettingsSlider: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    let label: String
+    let formattedValue: String
+
+    @Environment(\.isEnabled) private var isEnabled
+
+    private let thumbDiameter = 14.0
+    private let trackHeight = 4.0
+
+    var body: some View {
+        GeometryReader { geometry in
+            let width = max(geometry.size.width - thumbDiameter, 1)
+            let progress = (value - range.lowerBound)
+                / (range.upperBound - range.lowerBound)
+            let thumbOffset = min(max(progress, 0), 1) * width
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.primary.opacity(0.16))
+                    .frame(width: width, height: trackHeight)
+                    .offset(x: thumbDiameter / 2)
+
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(width: max(thumbOffset, trackHeight), height: trackHeight)
+                    .offset(x: thumbDiameter / 2)
+
+                Circle()
+                    .fill(Color(nsColor: .controlBackgroundColor))
+                    .overlay {
+                        Circle()
+                            .stroke(Color.primary.opacity(0.28), lineWidth: 0.5)
+                    }
+                    .shadow(color: .black.opacity(0.16), radius: 1, y: 0.5)
+                    .frame(width: thumbDiameter, height: thumbDiameter)
+                    .offset(x: thumbOffset)
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { gesture in
+                        updateValue(at: gesture.location.x, width: geometry.size.width)
+                    }
+            )
+        }
+        .frame(minWidth: 100, minHeight: 18, idealHeight: 18, maxHeight: 18)
+        .opacity(isEnabled ? 1 : 0.45)
+        .allowsHitTesting(isEnabled)
+        .accessibilityElement()
+        .accessibilityLabel(Text(label))
+        .accessibilityValue(Text(formattedValue))
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment:
+                setValue(value + step)
+            case .decrement:
+                setValue(value - step)
+            @unknown default:
+                break
+            }
+        }
+    }
+
+    private func updateValue(at location: Double, width: Double) {
+        let usableWidth = max(width - thumbDiameter, 1)
+        let progress = min(max((location - thumbDiameter / 2) / usableWidth, 0), 1)
+        setValue(range.lowerBound + progress * (range.upperBound - range.lowerBound))
+    }
+
+    private func setValue(_ candidate: Double) {
+        let steps = ((candidate - range.lowerBound) / step).rounded()
+        let snapped = range.lowerBound + steps * step
+        value = min(max(snapped, range.lowerBound), range.upperBound)
+    }
+}
+
 enum ModernMappingInputKind: String, CaseIterable, Identifiable {
     case button
     case wheel
@@ -108,7 +188,7 @@ final class ModernMappingPreferencesModel: ObservableObject {
                 id: "click-\($0.id.uuidString)",
                 selection: .mapping($0.id),
                 title: "\($0.button.displayName) · \($0.click.displayName) click",
-                detail: "\($0.action.direction.displayName) · \($0.label.isEmpty ? "Scroll" : $0.label)",
+                detail: "\(clickActionDescription($0.action)) · \($0.label.isEmpty ? "Scroll" : $0.label)",
                 symbolName: "computermouse",
                 isEnabled: $0.isEnabled
             )
@@ -131,6 +211,13 @@ final class ModernMappingPreferencesModel: ObservableObject {
                 isEnabled: $0.isEnabled
             )
         }
+    }
+
+    private func clickActionDescription(_ action: ScrollActionOptions) -> String {
+        if case .pageEdge = action.amount {
+            return action.direction == .up ? "Scroll to top" : "Scroll to bottom"
+        }
+        return action.direction.displayName
     }
 
     var selectedTitle: String {
@@ -726,10 +813,33 @@ struct MappingDetailView: View {
     private func clickActionEditor(_ id: UUID) -> some View {
         if let mapping = model.click(id) {
             Section("Action") {
-                Picker("Direction", selection: clickDirectionBinding(id, value: mapping.action.direction)) {
+                Picker("Action", selection: clickAmountBinding(id, value: mapping.action.amount)) {
+                    Text("Scroll fixed distance").tag(ModernScrollAmount.fixed)
+                    Text("Scroll one page").tag(ModernScrollAmount.page)
+                    Text("Scroll to page edge").tag(ModernScrollAmount.pageEdge)
+                }
+                let isPageEdge = mapping.action.amount == .pageEdge
+                Picker(
+                    isPageEdge ? "Destination" : "Direction",
+                    selection: clickDirectionBinding(id, value: mapping.action.direction)
+                ) {
                     ForEach(ScrollDirection.allCases, id: \.rawValue) {
-                        Text($0.displayName).tag($0)
+                        Text(
+                            isPageEdge
+                                ? ($0 == .up ? "Top of page" : "Bottom of page")
+                                : $0.displayName
+                        )
+                        .tag($0)
                     }
+                }
+                if case .fixed = mapping.action.amount {
+                    valueSlider(
+                        label: "Points",
+                        value: clickPointsBinding(id, value: mapping.action.amount),
+                        range: SliderRanges.scrollDistance,
+                        step: 5,
+                        format: { String(format: "%.0f pt", $0) }
+                    )
                 }
                 Toggle(
                     "Ease each click",
@@ -741,27 +851,21 @@ struct MappingDetailView: View {
                     }
                 }
                 .disabled(!mapping.action.easingEnabled)
-                Picker("Amount", selection: clickAmountBinding(id, value: mapping.action.amount)) {
-                    Text("Fixed points").tag(ModernScrollAmount.fixed)
-                    Text("One page").tag(ModernScrollAmount.page)
-                }
-                if case .fixed = mapping.action.amount {
-                    valueSlider(
-                        label: "Points",
-                        value: clickPointsBinding(id, value: mapping.action.amount),
-                        range: SliderRanges.scrollDistance,
-                        step: 5,
-                        format: { String(format: "%.0f pt", $0) }
-                    )
-                }
                 valueSlider(
                     label: "Duration",
                     value: clickDurationBinding(id, value: mapping.action.duration),
-                    range: SliderRanges.duration,
+                    range: isPageEdge
+                        ? SliderRanges.pageEdgeDuration
+                        : SliderRanges.duration,
                     step: 0.01,
                     format: { String(format: "%.2f s", $0) }
                 )
                 .disabled(!mapping.action.easingEnabled)
+                if isPageEdge {
+                    Text("A shorter duration scrolls faster. Home or End is sent after the animation to ensure the exact page edge is reached.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -861,6 +965,16 @@ struct MappingDetailView: View {
                         )
                     )
                     Text("Temporarily activates Thumbwheel Remapper while dragging, then returns to the previous app on release.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Toggle(
+                        "Show floating scrollbar",
+                        isOn: holdDragScrollBarBinding(
+                            id,
+                            value: mapping.action.dragScrollShowsScrollbar
+                        )
+                    )
+                    Text("Shows the target view's scroll position and visible-page proportion at the point where the drag starts.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Toggle(
@@ -971,11 +1085,13 @@ struct MappingDetailView: View {
     private enum ModernScrollAmount: Hashable {
         case fixed
         case page
+        case pageEdge
     }
 
     private enum SliderRanges {
         static let scrollDistance = 5.0...1_000.0
         static let duration = 0.0...1.0
+        static let pageEdgeDuration = 0.0...5.0
         static let holdSpeed = 80.0...4_000.0
         static let dragScrollMultiplier = 0.5...4.0
         static let dragScrollSmoothingDuration = 0.005...0.15
@@ -992,9 +1108,15 @@ struct MappingDetailView: View {
     ) -> some View {
         LabeledContent(label) {
             HStack(spacing: 12) {
-                Slider(value: value, in: range, step: step)
-                    .accessibilityLabel(Text(label))
-                Text(format(value.wrappedValue))
+                let formattedValue = format(value.wrappedValue)
+                SettingsSlider(
+                    value: value,
+                    range: range,
+                    step: step,
+                    label: label,
+                    formattedValue: formattedValue
+                )
+                Text(formattedValue)
                     .font(.body.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .frame(minWidth: 68, alignment: .trailing)
@@ -1078,16 +1200,22 @@ struct MappingDetailView: View {
             get: {
                 let amount = model.click(id)?.action.amount ?? value
                 if case .page = amount { return .page }
+                if case .pageEdge = amount { return .pageEdge }
                 return .fixed
             },
             set: { newValue in
                 model.updateClick(id) {
-                    if newValue == .page {
+                    switch newValue {
+                    case .page:
                         $0.action.amount = .page
-                    } else if case let .fixed(points) = $0.action.amount {
-                        $0.action.amount = .fixed(points)
-                    } else {
-                        $0.action.amount = .fixed(40)
+                    case .pageEdge:
+                        $0.action.amount = .pageEdge
+                    case .fixed:
+                        if case let .fixed(points) = $0.action.amount {
+                            $0.action.amount = .fixed(points)
+                        } else {
+                            $0.action.amount = .fixed(40)
+                        }
                     }
                 }
             }
@@ -1232,6 +1360,13 @@ struct MappingDetailView: View {
         Binding(
             get: { model.hold(id)?.action.dragScrollCapturesCursor ?? value },
             set: { newValue in model.updateHold(id) { $0.action.dragScrollCapturesCursor = newValue } }
+        )
+    }
+
+    private func holdDragScrollBarBinding(_ id: UUID, value: Bool) -> Binding<Bool> {
+        Binding(
+            get: { model.hold(id)?.action.dragScrollShowsScrollbar ?? value },
+            set: { newValue in model.updateHold(id) { $0.action.dragScrollShowsScrollbar = newValue } }
         )
     }
 

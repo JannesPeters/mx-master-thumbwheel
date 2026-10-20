@@ -192,7 +192,7 @@ public enum MappingValidator {
                     )
                 )
             }
-        case .page:
+        case .page, .pageEdge:
             break
         }
 
